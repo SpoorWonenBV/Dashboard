@@ -1,30 +1,27 @@
 // Supabase instellingen
-// Let op: gebruik hier alleen de publishable/anon key. Nooit de service_role key.
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => s ? new Date(s).toLocaleDateString('nl-NL') : '-';
 const statusBadge = st => `<span class="badge ${st[1]}">${st[0]}</span>`;
-const pages = document.querySelectorAll('.page');
-const navs = document.querySelectorAll('.nav');
 let query = '';
 let vastgoedData = [];
 
-async function supabaseSelect(table, select='*') {
-  const url = `${SUPABASE_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`;
-  const response = await fetch(url, {
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json'
-    }
-  });
-  if (!response.ok) {
-    const msg = await response.text();
-    throw new Error(`${table}: ${response.status} ${msg}`);
-  }
-  return response.json();
+const loginScreen = document.getElementById('loginScreen');
+const appShell = document.getElementById('appShell');
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+const logoutBtn = document.getElementById('logoutBtn');
+const userEmail = document.getElementById('userEmail');
+const pages = document.querySelectorAll('.page');
+const navs = document.querySelectorAll('.nav');
+
+async function supabaseSelect(table) {
+  const { data, error } = await db.from(table).select('*');
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return data || [];
 }
 
 function daysUntil(dateString) {
@@ -113,7 +110,7 @@ async function loadData() {
     render();
   } catch (error) {
     console.error(error);
-    statusText.textContent = 'Kan Supabase-data niet laden. Controleer API key, URL en RLS-instellingen.';
+    statusText.textContent = 'Kan Supabase-data niet laden. Controleer RLS-instellingen.';
     document.getElementById('attentionList').innerHTML = `<div class="alert danger"><strong>Fout bij laden</strong>${error.message}</div>`;
   }
 }
@@ -146,6 +143,37 @@ function render(){
   document.getElementById('maintenanceTable').innerHTML=`<tr><th>Object</th><th>Type</th><th>Datum</th><th>Status</th><th>Actie</th></tr>`+data.map(r=>`<tr><td>${r.object}</td><td>${r.onderhoud_titel}</td><td>${dateFmt(r.scope_inspectie_geldig_tot)}</td><td>${statusBadge(r.status_scope)}</td><td>Plan controle / inspectie</td></tr>`).join('');
 }
 
+function showApp(session){
+  loginScreen.classList.add('app-hidden');
+  appShell.classList.remove('app-hidden');
+  userEmail.textContent = session?.user?.email || '';
+  loadData();
+}
+
+function showLogin(){
+  appShell.classList.add('app-hidden');
+  loginScreen.classList.remove('app-hidden');
+}
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginError.textContent = '';
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+  if (error) {
+    loginError.textContent = 'Inloggen mislukt. Controleer e-mail en wachtwoord.';
+    return;
+  }
+  showApp(data.session);
+});
+
+logoutBtn.addEventListener('click', async () => {
+  await db.auth.signOut();
+  vastgoedData = [];
+  showLogin();
+});
+
 navs.forEach(btn=>btn.addEventListener('click',()=>{
   navs.forEach(n=>n.classList.remove('active'));
   btn.classList.add('active');
@@ -155,4 +183,9 @@ navs.forEach(btn=>btn.addEventListener('click',()=>{
 }));
 
 document.getElementById('search').addEventListener('input', e=>{query=e.target.value;render();});
-loadData();
+
+(async function init(){
+  const { data } = await db.auth.getSession();
+  if (data.session) showApp(data.session);
+  else showLogin();
+})();
