@@ -7,21 +7,18 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <section id="loginScreen" class="loginScreen">
+  <section id="loginView" class="loginView">
     <div class="loginCard">
-      <div class="brand loginBrand">Vastgoed<br><span>Dashboard</span></div>
-      <h1>Inloggen</h1>
-      <p>Log in met je Supabase-gebruiker.</p>
-      <label>E-mailadres</label>
-      <input id="loginEmail" type="email" autocomplete="email" placeholder="jouw@email.nl">
-      <label>Wachtwoord</label>
-      <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Wachtwoord">
-      <button id="loginButton" class="primaryButton">Inloggen</button>
-      <p id="loginError" class="loginError"></p>
+      <h1>Vastgoed Dashboard</h1>
+      <p>Log in om je vastgoeddata te bekijken.</p>
+      <input id="email" type="email" placeholder="E-mailadres">
+      <input id="password" type="password" placeholder="Wachtwoord">
+      <button id="loginBtn">Inloggen</button>
+      <p id="loginError" class="errorText"></p>
     </div>
   </section>
 
-  <div id="appShell" class="appShell hidden">
+  <section id="appView" class="appView hidden">
     <aside class="sidebar">
       <div class="brand">Vastgoed<br><span>Dashboard</span></div>
       <button class="nav active" data-page="dashboard">Dashboard</button>
@@ -29,16 +26,19 @@
       <button class="nav" data-page="contracten">Contracten</button>
       <button class="nav" data-page="onderhoud">Onderhoud</button>
       <button class="nav" data-page="meldingen">Meldingen</button>
-      <button id="logoutButton" class="logoutButton">Uitloggen</button>
+      <button id="logoutBtn" class="logoutBtn">Uitloggen</button>
     </aside>
 
     <main class="main">
       <header>
         <div>
           <h1 id="pageTitle">Dashboard</h1>
-          <p id="statusText">Verbonden met Supabase. Data wordt geladen...</p>
+          <p id="statusText">Data wordt geladen...</p>
         </div>
-        <input id="search" placeholder="Zoek object, huurder of status...">
+        <div class="headerActions">
+          <input id="search" placeholder="Zoek object, huurder of status...">
+          <button id="newPropertyBtn">+ Nieuw object</button>
+        </div>
       </header>
 
       <section id="dashboard" class="page active">
@@ -70,8 +70,40 @@
         <div id="notificationList" class="alertList"></div>
       </section>
     </main>
+  </section>
+
+  <div id="propertyModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="modalHeader">
+        <h2 id="modalTitle">Nieuw object</h2>
+        <button id="closeModalBtn" class="iconBtn">×</button>
+      </div>
+      <form id="propertyForm">
+        <input type="hidden" id="propertyId">
+        <label>Objectnaam<input id="propertyName" required></label>
+        <label>Adres<input id="propertyAddress"></label>
+        <label>Huisnummer<input id="propertyHouseNumber"></label>
+        <label>Stad<input id="propertyCity"></label>
+        <label>Type pand<input id="propertyType" placeholder="Woning, winkel, kantoor..."></label>
+        <label>Status<input id="propertyStatus" value="Actief"></label>
+        <label>Maandhuur<input id="propertyMonthlyRent" type="number" step="0.01"></label>
+        <label>Jaarhuur<input id="propertyYearlyRent" type="number" step="0.01"></label>
+        <label>Servicekosten<input id="propertyServiceCosts" type="number" step="0.01"></label>
+        <label>Waarborgsom<input id="propertyDeposit" type="number" step="0.01"></label>
+        <label>Energielabel<input id="propertyEnergyLabel"></label>
+        <label>Energielabel geldig tot<input id="propertyEnergyValidUntil" type="date"></label>
+        <label>Maand huurverhoging<input id="propertyRentIncreaseMonth"></label>
+        <label>Scope-inspectie geldig tot<input id="propertyScopeValidUntil" type="date"></label>
+        <div class="formActions">
+          <button type="button" id="deletePropertyBtn" class="dangerBtn hidden">Verwijderen</button>
+          <button type="submit">Opslaan</button>
+        </div>
+      </form>
+      <p id="formMessage" class="formMessage"></p>
+    </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
