@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vastgoed Dashboard Prototype</title>
+  <title>Vastgoed Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,17 +20,17 @@
     <header>
       <div>
         <h1 id="pageTitle">Dashboard</h1>
-        <p>Prototype op basis van het aangeleverde Excel-bestand. Peildatum: 1 juli 2026.</p>
+        <p id="statusText">Verbonden met Supabase. Data wordt geladen...</p>
       </div>
       <input id="search" placeholder="Zoek object, huurder of status...">
     </header>
 
     <section id="dashboard" class="page active">
       <div class="cards">
-        <div class="card"><span>Totaal objecten</span><strong id="totalObjects"></strong></div>
-        <div class="card"><span>Jaarhuur excl.</span><strong id="totalRent"></strong></div>
-        <div class="card"><span>Urgente meldingen</span><strong id="urgentCount"></strong></div>
-        <div class="card"><span>Contracten &lt; 12 mnd</span><strong id="contractSoon"></strong></div>
+        <div class="card"><span>Totaal objecten</span><strong id="totalObjects">-</strong></div>
+        <div class="card"><span>Jaarhuur excl.</span><strong id="totalRent">-</strong></div>
+        <div class="card"><span>Urgente meldingen</span><strong id="urgentCount">-</strong></div>
+        <div class="card"><span>Contracten &lt; 12 mnd</span><strong id="contractSoon">-</strong></div>
       </div>
       <div class="panel">
         <h2>Aandachtspunten</h2>
@@ -55,7 +55,6 @@
     </section>
   </main>
 
-  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
