@@ -91,7 +91,6 @@
 
       <section id="onderhoud" class="page">
         <div id="maintenanceOverview"></div>
-        <div class="panel"><table id="maintenanceTable"></table></div>
       </section>
 
       <section id="meldingen" class="page">
@@ -168,6 +167,36 @@
         </div>
       </form>
       <p id="formMessage" class="formMessage"></p>
+    </div>
+  </div>
+
+
+  <div id="maintenanceEditModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="modalHeader">
+        <h2 id="maintenanceEditTitle">Onderhoudsregel bewerken</h2>
+        <button id="closeMaintenanceModalBtn" class="iconBtn">×</button>
+      </div>
+      <form id="maintenanceEditForm">
+        <input type="hidden" id="mEditId">
+        <input type="hidden" id="mEditSource">
+        <div class="formGrid">
+          <label>Object<select id="mEditPropertyId"></select></label>
+          <label>Type<select id="mEditType"><option>Airco</option><option>CV-Installatie</option><option>Brandbeveiliging</option><option>Alarm installatie</option><option>Overheaddeur</option><option>Schilderwerk</option><option>Gevelreiniging</option><option>Onkruid</option><option>Scope-inspectie</option><option>Overig</option></select></label>
+          <label>Bouwjaar<input id="mEditBuildYear" type="number"></label>
+          <label>Gedaan<input id="mEditDoneDate" type="date"></label>
+          <label>Planning<input id="mEditPlannedDate" type="date"></label>
+          <label>Partij<input id="mEditSupplier"></label>
+          <label>Status<select id="mEditStatus"><option>Open</option><option>Gepland</option><option>Afgerond</option><option>Controle nodig</option></select></label>
+          <label>Kosten<input id="mEditCost" type="number" step="0.01"></label>
+        </div>
+        <label>Beschrijving<textarea id="mEditDescription" rows="3"></textarea></label>
+        <div class="formActions">
+          <button type="button" id="deleteMaintenanceRowBtn" class="dangerBtn hidden">Verwijderen</button>
+          <button type="submit">Opslaan</button>
+        </div>
+      </form>
+      <p id="maintenanceEditMessage" class="formMessage"></p>
     </div>
   </div>
 

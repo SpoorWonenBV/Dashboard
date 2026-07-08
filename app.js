@@ -177,35 +177,143 @@ function maintenanceSourceRows(data){
   const linkedHistoryIds=new Set();
   data.forEach(r=>{
     (r.maintenance_history||[]).forEach(m=>{
-      if(m.id) linkedHistoryIds.add(m.id);
-      rows.push({objectId:r.id, object:r.object, address:[r.straatnaam,r.huisnummer].filter(Boolean).join(' '), type:m.maintenance_type||m.title||'-', build_year:m.build_year||'', done_date:m.done_date||m.planned_date||'', planned_date:m.planned_date||'', supplier:m.supplier||'-', cost:Number(m.cost||0), status:m.status||'-', description:m.description||'', raw:m});
+      const isHistory = rawMaintenanceHistory.some(h=>h.id===m.id);
+      if(isHistory && m.id) linkedHistoryIds.add(m.id);
+      rows.push({
+        key:`${isHistory?'history':'maintenance'}:${m.id||r.id}`,
+        source:isHistory?'history':'maintenance',
+        id:m.id||'',
+        objectId:r.id,
+        object:r.object,
+        address:[r.straatnaam,r.huisnummer].filter(Boolean).join(' '),
+        type:m.maintenance_type||m.title||'-',
+        build_year:m.build_year||'',
+        done_date:m.done_date||m.planned_date||'',
+        planned_date:m.planned_date||'',
+        supplier:m.supplier||'-',
+        cost:Number(m.cost||0),
+        status:m.status||'-',
+        description:m.description||'',
+        raw:m
+      });
     });
   });
   rawMaintenanceHistory.forEach(m=>{
     if(m.id && linkedHistoryIds.has(m.id)) return;
-    rows.push({objectId:m.property_id||'', object:m.property_name||[m.property_address,m.house_number].filter(Boolean).join(' ')||'Onbekend object', address:[m.property_address,m.house_number].filter(Boolean).join(' '), type:m.maintenance_type||'-', build_year:m.build_year||'', done_date:m.done_date||'', planned_date:m.planned_date||'', supplier:m.supplier||'-', cost:Number(m.cost||0), status:m.status||'-', description:m.description||'', raw:m});
+    rows.push({
+      key:`history:${m.id}`,
+      source:'history',
+      id:m.id||'',
+      objectId:m.property_id||'',
+      object:m.property_name||[m.property_address,m.house_number].filter(Boolean).join(' ')||'Onbekend object',
+      address:[m.property_address,m.house_number].filter(Boolean).join(' '),
+      type:m.maintenance_type||'-',
+      build_year:m.build_year||'',
+      done_date:m.done_date||'',
+      planned_date:m.planned_date||'',
+      supplier:m.supplier||'-',
+      cost:Number(m.cost||0),
+      status:m.status||'-',
+      description:m.description||'',
+      raw:m
+    });
   });
   return rows;
 }
+function getPropertyById(id){ return vastgoedData.find(r=>r.id===id); }
+function propertyOptions(selectedId=''){
+  return `<option value="">Niet gekoppeld</option>` + vastgoedData.map(r=>`<option value="${r.id}" ${r.id===selectedId?'selected':''}>${r.object} ${r.straatnaam?`- ${r.straatnaam} ${r.huisnummer}`:''}</option>`).join('');
+}
+function maintenanceRowTable(rows){
+  return `<table class="maintenanceObjectTable"><tr><th>Type</th><th>Bouwjaar</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Kosten</th><th>Status</th><th>Acties</th></tr>`+
+    rows.map(r=>`<tr><td>${r.type}</td><td>${r.build_year||'-'}</td><td>${dateFmt(r.done_date)}</td><td>${dateFmt(r.planned_date)}</td><td>${r.supplier||'-'}</td><td>${euro(r.cost||0)}</td><td>${statusBadge([r.status||'-', maintStatusClass(r.status,r.planned_date)])}</td><td><button class="miniLink editMaintBtn" data-key="${escAttr(r.key)}">Bewerk</button>${r.objectId?` <button class="miniLink detailBtn" data-id="${r.objectId}">Open object</button>`:''}</td></tr>`).join('') + `</table>`;
+}
 function renderMaintenanceOverview(data){
-  const rowsAll=maintenanceSourceRows(data).filter(r=>{
+  const allRows=maintenanceSourceRows(data);
+  const rowsAll=allRows.filter(r=>{
     const hay=JSON.stringify(r).toLowerCase();
     if(query && !hay.includes(query.toLowerCase())) return false;
     if(maintenanceTypeFilter && r.type!==maintenanceTypeFilter) return false;
     if(maintenanceStatusFilter && norm(r.status)!==norm(maintenanceStatusFilter)) return false;
     return true;
-  }).sort((a,b)=>String(a.planned_date||a.done_date||'9999').localeCompare(String(b.planned_date||b.done_date||'9999')));
+  }).sort((a,b)=>String(a.object).localeCompare(String(b.object)) || String(a.planned_date||a.done_date||'9999').localeCompare(String(b.planned_date||b.done_date||'9999')));
   const overdue=rowsAll.filter(r=>{const d=daysUntil(r.planned_date); return d!==null && d<0 && maintStatusClass(r.status,r.planned_date)!=='ok';}).length;
   const upcoming90=rowsAll.filter(r=>{const d=daysUntil(r.planned_date); return d!==null && d>=0 && d<=90;}).length;
   const open=rowsAll.filter(r=>!['afgerond','gereed'].some(x=>norm(r.status).includes(x))).length;
   const totalCost=rowsAll.reduce((a,b)=>a+Number(b.cost||0),0);
-  const types=[...new Set(maintenanceSourceRows(data).map(r=>r.type).filter(Boolean))].sort();
-  const statuses=[...new Set(maintenanceSourceRows(data).map(r=>r.status).filter(Boolean))].sort();
+  const types=[...new Set(allRows.map(r=>r.type).filter(Boolean))].sort();
+  const statuses=[...new Set(allRows.map(r=>r.status).filter(Boolean))].sort();
   const filterHtml=`<div class="maintenanceFilters"><label>Type<select id="maintenanceTypeFilter"><option value="">Alle types</option>${types.map(t=>`<option ${maintenanceTypeFilter===t?'selected':''}>${t}</option>`).join('')}</select></label><label>Status<select id="maintenanceStatusFilter"><option value="">Alle statussen</option>${statuses.map(st=>`<option ${maintenanceStatusFilter===st?'selected':''}>${st}</option>`).join('')}</select></label></div>`;
   const summaryHtml=`<div class="cards maintenanceCards"><div class="card"><span>Totaal regels</span><strong>${rowsAll.length}</strong></div><div class="card"><span>Komende 90 dagen</span><strong>${upcoming90}</strong></div><div class="card"><span>Verlopen</span><strong>${overdue}</strong></div><div class="card"><span>Open</span><strong>${open}</strong></div><div class="card"><span>Totale kosten</span><strong>${euro(totalCost)}</strong></div></div>`;
-  const tableRows=rowsAll.map(r=>`<tr><td><strong>${r.object}</strong><span class="subtle">${r.address||''}</span></td><td>${r.type}</td><td>${r.build_year||'-'}</td><td>${dateFmt(r.done_date)}</td><td>${dateFmt(r.planned_date)}</td><td>${r.supplier||'-'}</td><td>${euro(r.cost||0)}</td><td>${statusBadge([r.status||'-', maintStatusClass(r.status,r.planned_date)])}</td><td>${r.objectId?`<button class="miniLink detailBtn" data-id="${r.objectId}">Open object</button>`:'-'}</td></tr>`).join('');
-  el('maintenanceOverview').innerHTML=summaryHtml+filterHtml;
-  el('maintenanceTable').innerHTML=`<tr><th>Object</th><th>Type</th><th>Bouwjaar</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Kosten</th><th>Status</th><th>Actie</th></tr>`+(tableRows || `<tr><td colspan="9">Nog geen onderhoudshistorie gevonden.</td></tr>`);
+  const grouped={};
+  rowsAll.forEach(r=>{ const key=r.objectId || r.object; (grouped[key] ||= {objectId:r.objectId, object:r.object, address:r.address, rows:[]}).rows.push(r); });
+  const groupHtml=Object.values(grouped).map(g=>{
+    const next=g.rows.map(r=>r.planned_date).filter(Boolean).sort()[0];
+    const costs=g.rows.reduce((a,b)=>a+Number(b.cost||0),0);
+    return `<article class="maintenanceObjectCard"><div class="maintenanceObjectHeader"><div><h3>${g.object}</h3><p class="meta">${g.address||'Geen adres bekend'} • ${g.rows.length} onderhoudsregels • eerstvolgende: ${dateFmt(next)}</p></div><div class="detailActions">${g.objectId?`<button class="secondaryBtn detailBtn" data-id="${g.objectId}">Open object</button>`:''}<button class="smallBtn newMaintBtn" data-id="${g.objectId||''}" data-name="${escAttr(g.object)}">+ Regel</button></div></div><div class="row"><span>Totale onderhoudskosten</span><strong>${euro(costs)}</strong></div>${maintenanceRowTable(g.rows)}</article>`;
+  }).join('');
+  el('maintenanceOverview').innerHTML=summaryHtml+filterHtml+(groupHtml || '<div class="panel"><p>Geen onderhoudshistorie gevonden.</p></div>');
+}
+function openMaintenanceModal(mode, row=null, objectId=''){
+  el('maintenanceEditMessage').textContent='';
+  el('maintenanceEditTitle').textContent = mode==='new' ? 'Onderhoudsregel toevoegen' : 'Onderhoudsregel bewerken';
+  el('mEditId').value = row?.id || '';
+  el('mEditSource').value = mode==='new' ? 'new' : (row?.source || 'history');
+  el('mEditPropertyId').innerHTML = propertyOptions(row?.objectId || objectId || '');
+  el('mEditType').value = row?.type && row.type!=='-' ? row.type : 'Airco';
+  el('mEditBuildYear').value = row?.build_year || '';
+  el('mEditDoneDate').value = row?.done_date || '';
+  el('mEditPlannedDate').value = row?.planned_date || '';
+  el('mEditSupplier').value = row?.supplier && row.supplier!=='-' ? row.supplier : '';
+  el('mEditStatus').value = row?.status && row.status!=='-' ? row.status : 'Open';
+  el('mEditCost').value = row?.cost || '';
+  el('mEditDescription').value = row?.description || '';
+  el('deleteMaintenanceRowBtn').classList.toggle('hidden', mode==='new');
+  el('maintenanceEditModal').classList.remove('hidden');
+}
+function closeMaintenanceModal(){ el('maintenanceEditModal').classList.add('hidden'); }
+function findMaintenanceRowByKey(key){ return maintenanceSourceRows(vastgoedData).find(r=>r.key===key); }
+function selectedMaintenancePropertyPayload(){
+  const id=el('mEditPropertyId').value;
+  const r=getPropertyById(id);
+  return {property_id:id||null, property_name:r?.object||null, property_address:r?.straatnaam||null, house_number:r?.huisnummer||null, tenant_name:r?.huurder||null};
+}
+async function saveMaintenanceEdit(e){
+  e.preventDefault();
+  el('maintenanceEditMessage').textContent='Bezig met opslaan...';
+  const source=el('mEditSource').value;
+  const id=el('mEditId').value;
+  const base={
+    ...selectedMaintenancePropertyPayload(),
+    maintenance_type:el('mEditType').value,
+    build_year:numOrNull(el('mEditBuildYear').value),
+    done_date:el('mEditDoneDate').value||null,
+    planned_date:el('mEditPlannedDate').value||null,
+    supplier:el('mEditSupplier').value||null,
+    status:el('mEditStatus').value||'Open',
+    cost:numOrNull(el('mEditCost').value),
+    description:el('mEditDescription').value||null
+  };
+  let res;
+  if(source==='maintenance'){
+    const pId=el('mEditPropertyId').value || null;
+    const payload={property_id:pId,title:base.maintenance_type,planned_date:base.planned_date,cost:base.cost,status:base.status,description:base.description,priority:'Normaal'};
+    res=await sb.from('maintenance').update(payload).eq('id',id);
+  } else if(source==='new') {
+    res=await sb.from('property_maintenance_history').insert(base);
+  } else {
+    res=await sb.from('property_maintenance_history').update(base).eq('id',id);
+  }
+  if(res.error){ el('maintenanceEditMessage').textContent=res.error.message; return; }
+  closeMaintenanceModal(); await loadData();
+}
+async function deleteMaintenanceEdit(){
+  const source=el('mEditSource').value;
+  const id=el('mEditId').value;
+  if(!id || !confirm('Onderhoudsregel verwijderen?')) return;
+  const res = source==='maintenance' ? await sb.from('maintenance').delete().eq('id',id) : await sb.from('property_maintenance_history').delete().eq('id',id);
+  if(res.error){ el('maintenanceEditMessage').textContent=res.error.message; return; }
+  closeMaintenanceModal(); await loadData();
 }
 
 function render(){
@@ -227,7 +335,7 @@ function render(){
   if(el('maintenanceOverview')) renderMaintenanceOverview(data);
 }
 function maintenanceHistoryHtml(r){
-  const rows=(r.maintenance_history||[]).map(m=>`<tr><td>${m.maintenance_type||m.title||'-'}</td><td>${m.build_year||'-'}</td><td>${dateFmt(m.done_date||m.planned_date)}</td><td>${dateFmt(m.planned_date)}</td><td>${m.supplier||'-'}</td><td>${m.status||'-'}</td><td>${euro(m.cost||0)}</td><td><button class="miniLink deleteHistBtn" data-id="${m.id}">Verwijder</button></td></tr>`).join('');
+  const rows=(r.maintenance_history||[]).map(m=>`<tr><td>${m.maintenance_type||m.title||'-'}</td><td>${m.build_year||'-'}</td><td>${dateFmt(m.done_date||m.planned_date)}</td><td>${dateFmt(m.planned_date)}</td><td>${m.supplier||'-'}</td><td>${m.status||'-'}</td><td>${euro(m.cost||0)}</td><td><button class="miniLink editMaintBtn" data-key="${rawMaintenanceHistory.some(h=>h.id===m.id)?'history':'maintenance'}:${m.id}">Bewerk</button> <button class="miniLink deleteHistBtn" data-id="${m.id}">Verwijder</button></td></tr>`).join('');
   const table = rows ? `<table><tr><th>Type</th><th>Bouwjaar</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Status</th><th>Kosten</th><th></th></tr>${rows}</table>` : '<p class="empty">Nog geen onderhoudshistorie.</p>';
   const form = `<div class="historyForm"><h4>Onderhoudsregel toevoegen</h4><div class="formGrid"><label>Type<select id="histType"><option>Airco</option><option>CV-Installatie</option><option>Brandbeveiliging</option><option>Alarm installatie</option><option>Overheaddeur</option><option>Schilderwerk</option><option>Gevelreiniging</option><option>Onkruid</option><option>Scope-inspectie</option><option>Overig</option></select></label><label>Bouwjaar<input id="histBuildYear" type="number"></label><label>Gedaan<input id="histDoneDate" type="date"></label><label>Planning<input id="histPlannedDate" type="date"></label><label>Partij<input id="histSupplier"></label><label>Status<select id="histStatus"><option>Open</option><option>Gepland</option><option>Afgerond</option><option>Controle nodig</option></select></label><label>Kosten<input id="histCost" type="number" step="0.01"></label></div><label>Beschrijving<textarea id="histDescription" rows="2"></textarea></label><button class="smallBtn addHistBtn" data-id="${r.id}">Onderhoudsregel toevoegen</button><p id="historyMessage" class="formMessage"></p></div>`;
   return form + table;
@@ -332,13 +440,13 @@ function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{ selectedPropertyId=null; setPage(btn.dataset.page,btn.textContent); }));
-  document.body.addEventListener('click', e=>{ const detail=e.target.closest('.detailBtn'); const edit=e.target.closest('.editBtn'); const upload=e.target.closest('.uploadDocBtn'); const openDoc=e.target.closest('.openDocBtn'); const deleteDoc=e.target.closest('.deleteDocBtn'); const addHist=e.target.closest('.addHistBtn'); const deleteHist=e.target.closest('.deleteHistBtn'); if(detail) renderDetail(detail.dataset.id); if(edit) openEditProperty(edit.dataset.id); if(upload) uploadDocument(upload.dataset.id); if(openDoc) openDocument(openDoc.dataset.path); if(deleteDoc) deleteDocument(deleteDoc.dataset.id, deleteDoc.dataset.path); if(addHist) addMaintenanceHistory(addHist.dataset.id); if(deleteHist) deleteMaintenanceHistory(deleteHist.dataset.id); });
+  document.body.addEventListener('click', e=>{ const detail=e.target.closest('.detailBtn'); const edit=e.target.closest('.editBtn'); const upload=e.target.closest('.uploadDocBtn'); const openDoc=e.target.closest('.openDocBtn'); const deleteDoc=e.target.closest('.deleteDocBtn'); const addHist=e.target.closest('.addHistBtn'); const deleteHist=e.target.closest('.deleteHistBtn'); const editMaint=e.target.closest('.editMaintBtn'); const newMaint=e.target.closest('.newMaintBtn'); if(detail) renderDetail(detail.dataset.id); if(edit) openEditProperty(edit.dataset.id); if(upload) uploadDocument(upload.dataset.id); if(openDoc) openDocument(openDoc.dataset.path); if(deleteDoc) deleteDocument(deleteDoc.dataset.id, deleteDoc.dataset.path); if(addHist) addMaintenanceHistory(addHist.dataset.id); if(deleteHist) deleteMaintenanceHistory(deleteHist.dataset.id); if(editMaint){ const row=findMaintenanceRowByKey(editMaint.dataset.key); if(row) openMaintenanceModal('edit', row); } if(newMaint) openMaintenanceModal('new', null, newMaint.dataset.id || ''); });
   el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const {error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} el('loginError').textContent=''; showApp(); await loadData(); });
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });
   el('logoutBtn').addEventListener('click', async()=>{ await sb.auth.signOut(); vastgoedData=[]; showLogin(); });
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{ if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); } if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); } });
-  el('newPropertyBtn').addEventListener('click', openNewProperty); el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); }); el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty);
+  el('newPropertyBtn').addEventListener('click', openNewProperty); el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); }); el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty); el('closeMaintenanceModalBtn').addEventListener('click', closeMaintenanceModal); el('maintenanceEditForm').addEventListener('submit', saveMaintenanceEdit); el('deleteMaintenanceRowBtn').addEventListener('click', deleteMaintenanceEdit);
   checkSession();
 }
 document.addEventListener('DOMContentLoaded', init);
