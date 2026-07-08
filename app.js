@@ -1,12 +1,13 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], selectedPropertyId = null;
+let sb, query = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], selectedPropertyId = null;
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => s ? new Date(s).toLocaleDateString('nl-NL') : '-';
 const statusBadge = st => `<span class="badge ${st[1]}">${st[0]}</span>`;
 const pct = n => Number.isFinite(Number(n)) ? `${Number(n).toFixed(1).replace('.', ',')}%` : '-';
 const clean = s => String(s || '').trim();
+const norm = s => String(s || '').toLowerCase().replace(/\s+/g,' ').trim();
 const el = id => document.getElementById(id);
 const signedPhotoCache = {};
 const safeFileName = name => String(name || 'bestand').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -52,9 +53,15 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
   const contractsByProperty={}; contracts.forEach(c=>{(contractsByProperty[c.property_id] ||= []).push(c)});
   const maintenanceByProperty={}; maintenance.forEach(m=>{(maintenanceByProperty[m.property_id] ||= []).push(m)});
   const documentsByProperty={}; documents.forEach(d=>{(documentsByProperty[d.property_id] ||= []).push(d)});
-  const historyByProperty={}; history.forEach(h=>{
+  const historyByProperty={};
+  const historyByObjectKey={};
+  history.forEach(h=>{
     const key = h.property_id || '';
     if(key) (historyByProperty[key] ||= []).push(h);
+    const nameKey = norm(h.property_name);
+    const addressKey = norm([h.property_address, h.house_number].filter(Boolean).join(' '));
+    if(nameKey) (historyByObjectKey[nameKey] ||= []).push(h);
+    if(addressKey) (historyByObjectKey[addressKey] ||= []).push(h);
   });
   return properties.map(p=>{
     const contract=(contractsByProperty[p.id]||[])[0]||{};
@@ -68,7 +75,10 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
     const scopeDate=p.scope_valid_until || plannedMaintenance.planned_date;
     const purchaseValue = Number(p.purchase_value || 0);
     const grossYield = purchaseValue > 0 ? (Number(rentPj || 0) / purchaseValue) * 100 : null;
-    const maintenanceHistory = (historyByProperty[p.id] || maintenanceByProperty[p.id] || []).sort((a,b)=>String(b.planned_date||b.done_date||'').localeCompare(String(a.planned_date||a.done_date||'')));
+    const objectKey = norm(objectName);
+    const addressKey = norm([p.address, p.house_number].filter(Boolean).join(' '));
+    const matchedHistory = historyByProperty[p.id] || historyByObjectKey[objectKey] || historyByObjectKey[addressKey] || [];
+    const maintenanceHistory = (matchedHistory.length ? matchedHistory : (maintenanceByProperty[p.id] || [])).sort((a,b)=>String(b.planned_date||b.done_date||'').localeCompare(String(a.planned_date||a.done_date||'')));
     const documentsList = (documentsByProperty[p.id] || []).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
     return {id:p.id, property:p, contract, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, waarborgsom:p.deposit||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', maand_huurverhoging:p.rent_increase_month||'', einddatum_contract:contractEnd, startdatum_contract:contract.start_date||'', opzegdatum:noticeDate, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:getDateStatus(contractEnd,365,90), status_opzeg:getDateStatus(noticeDate,365,90), status_scope:getDateStatus(scopeDate,365,90), status_energy:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
   });
@@ -152,6 +162,52 @@ function renderCharts(data){
   if(el('totalMortgageValue')) el('totalMortgageValue').textContent=euro(totalMortgage);
   if(el('totalEquityValue')) el('totalEquityValue').textContent=euro(totalEquity);
 }
+
+function maintStatusClass(status, plannedDate){
+  const st = norm(status);
+  const days = daysUntil(plannedDate);
+  if(st.includes('afgerond') || st.includes('gereed')) return 'ok';
+  if(days !== null && days < 0) return 'danger';
+  if(days !== null && days <= 90) return 'warning';
+  if(st.includes('open') || st.includes('controle')) return 'warning';
+  return 'ok';
+}
+function maintenanceSourceRows(data){
+  const rows=[];
+  const linkedHistoryIds=new Set();
+  data.forEach(r=>{
+    (r.maintenance_history||[]).forEach(m=>{
+      if(m.id) linkedHistoryIds.add(m.id);
+      rows.push({objectId:r.id, object:r.object, address:[r.straatnaam,r.huisnummer].filter(Boolean).join(' '), type:m.maintenance_type||m.title||'-', build_year:m.build_year||'', done_date:m.done_date||m.planned_date||'', planned_date:m.planned_date||'', supplier:m.supplier||'-', cost:Number(m.cost||0), status:m.status||'-', description:m.description||'', raw:m});
+    });
+  });
+  rawMaintenanceHistory.forEach(m=>{
+    if(m.id && linkedHistoryIds.has(m.id)) return;
+    rows.push({objectId:m.property_id||'', object:m.property_name||[m.property_address,m.house_number].filter(Boolean).join(' ')||'Onbekend object', address:[m.property_address,m.house_number].filter(Boolean).join(' '), type:m.maintenance_type||'-', build_year:m.build_year||'', done_date:m.done_date||'', planned_date:m.planned_date||'', supplier:m.supplier||'-', cost:Number(m.cost||0), status:m.status||'-', description:m.description||'', raw:m});
+  });
+  return rows;
+}
+function renderMaintenanceOverview(data){
+  const rowsAll=maintenanceSourceRows(data).filter(r=>{
+    const hay=JSON.stringify(r).toLowerCase();
+    if(query && !hay.includes(query.toLowerCase())) return false;
+    if(maintenanceTypeFilter && r.type!==maintenanceTypeFilter) return false;
+    if(maintenanceStatusFilter && norm(r.status)!==norm(maintenanceStatusFilter)) return false;
+    return true;
+  }).sort((a,b)=>String(a.planned_date||a.done_date||'9999').localeCompare(String(b.planned_date||b.done_date||'9999')));
+  const overdue=rowsAll.filter(r=>{const d=daysUntil(r.planned_date); return d!==null && d<0 && maintStatusClass(r.status,r.planned_date)!=='ok';}).length;
+  const upcoming90=rowsAll.filter(r=>{const d=daysUntil(r.planned_date); return d!==null && d>=0 && d<=90;}).length;
+  const open=rowsAll.filter(r=>!['afgerond','gereed'].some(x=>norm(r.status).includes(x))).length;
+  const totalCost=rowsAll.reduce((a,b)=>a+Number(b.cost||0),0);
+  const types=[...new Set(maintenanceSourceRows(data).map(r=>r.type).filter(Boolean))].sort();
+  const statuses=[...new Set(maintenanceSourceRows(data).map(r=>r.status).filter(Boolean))].sort();
+  const filterHtml=`<div class="maintenanceFilters"><label>Type<select id="maintenanceTypeFilter"><option value="">Alle types</option>${types.map(t=>`<option ${maintenanceTypeFilter===t?'selected':''}>${t}</option>`).join('')}</select></label><label>Status<select id="maintenanceStatusFilter"><option value="">Alle statussen</option>${statuses.map(st=>`<option ${maintenanceStatusFilter===st?'selected':''}>${st}</option>`).join('')}</select></label></div>`;
+  const summaryHtml=`<div class="cards maintenanceCards"><div class="card"><span>Totaal regels</span><strong>${rowsAll.length}</strong></div><div class="card"><span>Komende 90 dagen</span><strong>${upcoming90}</strong></div><div class="card"><span>Verlopen</span><strong>${overdue}</strong></div><div class="card"><span>Open</span><strong>${open}</strong></div><div class="card"><span>Totale kosten</span><strong>${euro(totalCost)}</strong></div></div>`;
+  const tableRows=rowsAll.map(r=>`<tr><td><strong>${r.object}</strong><span class="subtle">${r.address||''}</span></td><td>${r.type}</td><td>${r.build_year||'-'}</td><td>${dateFmt(r.done_date)}</td><td>${dateFmt(r.planned_date)}</td><td>${r.supplier||'-'}</td><td>${euro(r.cost||0)}</td><td>${statusBadge([r.status||'-', maintStatusClass(r.status,r.planned_date)])}</td><td>${r.objectId?`<button class="miniLink detailBtn" data-id="${r.objectId}">Open object</button>`:'-'}</td></tr>`).join('');
+  el('maintenanceOverview').innerHTML=summaryHtml+filterHtml;
+  el('maintenanceTable').innerHTML=`<tr><th>Object</th><th>Type</th><th>Bouwjaar</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Kosten</th><th>Status</th><th>Actie</th></tr>`+(tableRows || `<tr><td colspan="9">Nog geen onderhoudshistorie gevonden.</td></tr>`);
+}
+
 function render(){
   const data=filtered(), notes=notificationItems(data);
   renderCharts(data);
@@ -168,8 +224,7 @@ function render(){
   el('objectGrid').innerHTML=data.map(r=>`<article class="objectCard">${photoBox(r.foto_url,'objectPhoto',`Foto van ${r.object}`)}<h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
   refreshPhotos();
   el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Huur p/m</th><th>Startdatum</th><th>Einddatum</th><th>Opzegdatum</th><th>Status</th></tr>`+data.map(r=>`<tr><td>${r.object}</td><td>${r.huurder}</td><td>${euro(r.huur_pm)}</td><td>${dateFmt(r.startdatum_contract)}</td><td>${dateFmt(r.einddatum_contract)}</td><td>${dateFmt(r.opzegdatum)}</td><td>${statusBadge(r.status_contract)}</td></tr>`).join('');
-  const maintRows=[]; data.forEach(r=>{ (r.maintenance_history||[]).forEach(m=>maintRows.push(`<tr><td>${r.object}</td><td>${m.maintenance_type||m.title||'-'}</td><td>${dateFmt(m.done_date||m.planned_date)}</td><td>${dateFmt(m.planned_date)}</td><td>${m.supplier||'-'}</td><td>${euro(m.cost||0)}</td><td>${m.status||'-'}</td></tr>`)); });
-  el('maintenanceTable').innerHTML=`<tr><th>Object</th><th>Type</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Kosten</th><th>Status</th></tr>`+(maintRows.join('') || `<tr><td colspan="7">Nog geen onderhoudshistorie.</td></tr>`);
+  if(el('maintenanceOverview')) renderMaintenanceOverview(data);
 }
 function maintenanceHistoryHtml(r){
   const rows=(r.maintenance_history||[]).map(m=>`<tr><td>${m.maintenance_type||m.title||'-'}</td><td>${m.build_year||'-'}</td><td>${dateFmt(m.done_date||m.planned_date)}</td><td>${dateFmt(m.planned_date)}</td><td>${m.supplier||'-'}</td><td>${m.status||'-'}</td><td>${euro(m.cost||0)}</td><td><button class="miniLink deleteHistBtn" data-id="${m.id}">Verwijder</button></td></tr>`).join('');
@@ -282,6 +337,7 @@ function init(){
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });
   el('logoutBtn').addEventListener('click', async()=>{ await sb.auth.signOut(); vastgoedData=[]; showLogin(); });
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
+  document.body.addEventListener('change', e=>{ if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); } if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); } });
   el('newPropertyBtn').addEventListener('click', openNewProperty); el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); }); el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty);
   checkSession();
 }
