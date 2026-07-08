@@ -252,7 +252,9 @@ function renderMaintenanceOverview(data){
     const costs=g.rows.reduce((a,b)=>a+Number(b.cost||0),0);
     return `<article class="maintenanceObjectCard"><div class="maintenanceObjectHeader"><div><h3>${g.object}</h3><p class="meta">${g.address||'Geen adres bekend'} • ${g.rows.length} onderhoudsregels • eerstvolgende: ${dateFmt(next)}</p></div><div class="detailActions">${g.objectId?`<button class="secondaryBtn detailBtn" data-id="${g.objectId}">Open object</button>`:''}<button class="smallBtn newMaintBtn" data-id="${g.objectId||''}" data-name="${escAttr(g.object)}">+ Regel</button></div></div><div class="row"><span>Totale onderhoudskosten</span><strong>${euro(costs)}</strong></div>${maintenanceRowTable(g.rows)}</article>`;
   }).join('');
-  el('maintenanceOverview').innerHTML=summaryHtml+filterHtml+(groupHtml || '<div class="panel"><p>Geen onderhoudshistorie gevonden.</p></div>');
+  const overviewTarget = el('maintenanceOverview') || el('maintenanceTable') || document.querySelector('#onderhoud .panel') || document.getElementById('onderhoud');
+  if (!overviewTarget) return;
+  overviewTarget.innerHTML=summaryHtml+filterHtml+(groupHtml || '<div class="panel"><p>Geen onderhoudshistorie gevonden.</p></div>');
 }
 function openMaintenanceModal(mode, row=null, objectId=''){
   el('maintenanceEditMessage').textContent='';
