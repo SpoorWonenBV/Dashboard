@@ -106,7 +106,24 @@ async function loadData(){
     render(); if(selectedPropertyId) renderDetail(selectedPropertyId);
   }catch(error){ console.error(error); el('statusText').textContent='Kan data niet laden.'; el('attentionList').innerHTML=`<div class="alert danger"><strong>Fout bij laden</strong>${error.message}</div>`; }
 }
-function filtered(){ return vastgoedData.filter(r=>JSON.stringify(r).toLowerCase().includes(query.toLowerCase())); }
+function filtered(){
+  return vastgoedData
+    .filter(r=>JSON.stringify(r).toLowerCase().includes(query.toLowerCase()))
+    .sort((a,b)=>{
+      const streetCompare=String(a.straatnaam||'').localeCompare(
+        String(b.straatnaam||''),
+        'nl',
+        {sensitivity:'base', numeric:true}
+      );
+      if(streetCompare!==0) return streetCompare;
+
+      return String(a.huisnummer||'').localeCompare(
+        String(b.huisnummer||''),
+        'nl',
+        {sensitivity:'base', numeric:true}
+      );
+    });
+}
 function notificationItems(data){
   const items=[];
   data.forEach(r=>{
