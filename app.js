@@ -13,6 +13,7 @@ const signedPhotoCache = {};
 const safeFileName = name => String(name || 'bestand').replace(/[^a-zA-Z0-9._-]/g, '_');
 const isExternalUrl = value => /^https?:\/\//i.test(String(value || ''));
 const escAttr = value => String(value || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 
 async function resolvePhotoUrl(value){
   if(!value) return '';
@@ -66,7 +67,8 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
   return properties.map(p=>{
     const contract=(contractsByProperty[p.id]||[])[0]||{};
     const tenant=tenantById[contract.tenant_id]||{};
-    const plannedMaintenance=(maintenanceByProperty[p.id]||[])[0]||{};
+    const propertyMaintenance=(maintenanceByProperty[p.id]||[]).slice().sort((a,b)=>String(a.planned_date||'9999-12-31').localeCompare(String(b.planned_date||'9999-12-31')));
+    const plannedMaintenance=propertyMaintenance[0]||{};
     const objectName=p.name || [p.address,p.house_number].filter(Boolean).join(' ') || 'Onbekend object';
     const rentPm=p.monthly_rent ?? contract.monthly_rent ?? 0;
     const rentPj=p.yearly_rent ?? (Number(rentPm||0)*12);
@@ -78,7 +80,7 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
     const objectKey = norm(objectName);
     const addressKey = norm([p.address, p.house_number].filter(Boolean).join(' '));
     const matchedHistory = historyByProperty[p.id] || historyByObjectKey[objectKey] || historyByObjectKey[addressKey] || [];
-    const maintenanceHistory = (matchedHistory.length ? matchedHistory : (maintenanceByProperty[p.id] || [])).sort((a,b)=>String(b.planned_date||b.done_date||'').localeCompare(String(a.planned_date||a.done_date||'')));
+    const maintenanceHistory = [...propertyMaintenance, ...matchedHistory].sort((a,b)=>String(b.planned_date||b.completed_date||b.done_date||'').localeCompare(String(a.planned_date||a.completed_date||a.done_date||'')));
     const documentsList = (documentsByProperty[p.id] || []).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
     return {id:p.id, property:p, contract, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, waarborgsom:p.deposit||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', maand_huurverhoging:p.rent_increase_month||'', einddatum_contract:contractEnd, startdatum_contract:contract.start_date||'', opzegdatum:noticeDate, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:getDateStatus(contractEnd,365,90), status_opzeg:getDateStatus(noticeDate,365,90), status_scope:getDateStatus(scopeDate,365,90), status_energy:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
   });
@@ -188,9 +190,9 @@ function maintenanceSourceRows(data){
         address:[r.straatnaam,r.huisnummer].filter(Boolean).join(' '),
         type:m.maintenance_type||m.title||'-',
         build_year:m.build_year||'',
-        done_date:m.done_date||m.planned_date||'',
+        done_date:m.completed_date||m.done_date||'',
         planned_date:m.planned_date||'',
-        supplier:m.supplier||'-',
+        supplier:m.contractor||m.supplier||'-',
         cost:Number(m.cost||0),
         status:m.status||'-',
         description:m.description||'',
@@ -211,7 +213,7 @@ function maintenanceSourceRows(data){
       build_year:m.build_year||'',
       done_date:m.done_date||'',
       planned_date:m.planned_date||'',
-      supplier:m.supplier||'-',
+      supplier:m.contractor||m.supplier||'-',
       cost:Number(m.cost||0),
       status:m.status||'-',
       description:m.description||'',
@@ -306,7 +308,7 @@ async function saveMaintenanceEdit(e){
   let res;
   if(source==='maintenance'){
     const pId=el('mEditPropertyId').value || null;
-    const payload={property_id:pId,title:base.maintenance_type,planned_date:base.planned_date,cost:base.cost,status:base.status,description:base.description,priority:'Normaal'};
+    const payload={property_id:pId,title:base.maintenance_type,build_year:base.build_year,completed_date:base.done_date,planned_date:base.planned_date,contractor:base.supplier,cost:base.cost,status:base.status,description:base.description,priority:'Normaal'};
     res=await sb.from('maintenance').update(payload).eq('id',id);
   } else if(source==='new') {
     res=await sb.from('property_maintenance_history').insert(base);
@@ -323,6 +325,224 @@ async function deleteMaintenanceEdit(){
   const res = source==='maintenance' ? await sb.from('maintenance').delete().eq('id',id) : await sb.from('property_maintenance_history').delete().eq('id',id);
   if(res.error){ el('maintenanceEditMessage').textContent=res.error.message; return; }
   closeMaintenanceModal(); await loadData();
+}
+
+
+function parseSemicolonCsv(text){
+  const rows=[];
+  let row=[], cell='', inQuotes=false;
+  const input=String(text||'').replace(/^\uFEFF/, '');
+  for(let i=0;i<input.length;i++){
+    const ch=input[i];
+    if(ch==='"'){
+      if(inQuotes && input[i+1]==='"'){ cell+='"'; i++; }
+      else inQuotes=!inQuotes;
+    } else if(ch===';' && !inQuotes){
+      row.push(cell); cell='';
+    } else if((ch==='\n' || ch==='\r') && !inQuotes){
+      if(ch==='\r' && input[i+1]==='\n') i++;
+      row.push(cell); cell='';
+      if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+      row=[];
+    } else {
+      cell+=ch;
+    }
+  }
+  row.push(cell);
+  if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+  return rows;
+}
+
+function canonicalMaintenanceType(value){
+  const key=norm(value).replace(/\s+/g,' ');
+  const aliases={
+    'airco':'Airco',
+    'cv-installatie':'CV-Installatie',
+    'cv installatie':'CV-Installatie',
+    'brandbeveiliging':'Brandbeveiliging',
+    'alarm installatie':'Alarm installatie',
+    'alarminstallatie':'Alarm installatie',
+    'overheaddeur':'Overheaddeur',
+    'schilderwerk':'Schilderwerk',
+    'gevelreiniging':'Gevelreiniging',
+    'onkruid':'Onkruid'
+  };
+  return aliases[key] || clean(value);
+}
+
+function parseBuildYear(value){
+  const raw=clean(value);
+  if(!raw) return null;
+  if(!/^\d{4}$/.test(raw)) throw new Error(`Ongeldig bouwjaar: ${raw}`);
+  const year=Number(raw);
+  if(year<1800 || year>2200) throw new Error(`Ongeldig bouwjaar: ${raw}`);
+  return year;
+}
+
+function lastDayIso(year, monthIndex){
+  const day=new Date(Date.UTC(year, monthIndex+1, 0)).getUTCDate();
+  return `${year}-${String(monthIndex+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function parseMaintenanceDate(value){
+  const raw=clean(value).toLowerCase().replace(/\./g,'');
+  if(!raw) return null;
+
+  let match=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(match){
+    const year=Number(match[1]), month=Number(match[2]), day=Number(match[3]);
+    const date=new Date(Date.UTC(year,month-1,day));
+    if(date.getUTCFullYear()!==year || date.getUTCMonth()!==month-1 || date.getUTCDate()!==day) throw new Error(`Ongeldige datum: ${value}`);
+    return `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+
+  match=raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if(match){
+    const day=Number(match[1]), month=Number(match[2]), year=Number(match[3]);
+    const date=new Date(Date.UTC(year,month-1,day));
+    if(date.getUTCFullYear()!==year || date.getUTCMonth()!==month-1 || date.getUTCDate()!==day) throw new Error(`Ongeldige datum: ${value}`);
+    return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+
+  match=raw.match(/^([a-zé]+)[\s-]+(\d{2}|\d{4})$/i);
+  if(match){
+    const months={jan:0,januari:0,feb:1,februari:1,mrt:2,maart:2,maa:2,apr:3,april:3,mei:4,jun:5,juni:5,jul:6,juli:6,aug:7,augustus:7,sep:8,sept:8,september:8,okt:9,oktober:9,nov:10,november:10,dec:11,december:11};
+    const month=months[match[1]];
+    if(month===undefined) throw new Error(`Onbekende maand: ${value}`);
+    let year=Number(match[2]);
+    if(match[2].length===2) year=2000+year;
+    return lastDayIso(year,month);
+  }
+
+  throw new Error(`Ongeldige datum: ${value}`);
+}
+
+function maintenanceCsvRecords(rows){
+  if(rows.length<3) throw new Error('Het CSV-bestand bevat geen gegevens of mist de twee kopregels.');
+  const first=rows[0], second=rows[1];
+  const columns=[];
+  let currentType='';
+  for(let i=3;i<Math.max(first.length,second.length);i++){
+    if(clean(first[i])) currentType=canonicalMaintenanceType(first[i]);
+    const field=norm(second[i]);
+    if(currentType && field) columns.push({index:i,type:currentType,field});
+  }
+  if(!columns.length) throw new Error('De onderhoudskolommen konden niet uit de twee kopregels worden gelezen.');
+
+  const records=[];
+  rows.slice(2).forEach((row,rowOffset)=>{
+    const street=clean(row[0]), house=clean(row[1]), tenant=clean(row[2]);
+    if(!street && !house && !tenant) return;
+    const groups={};
+    columns.forEach(col=>{
+      const target=(groups[col.type] ||= {type:col.type,street,house,tenant,rowNumber:rowOffset+3});
+      const value=clean(row[col.index]);
+      if(col.field==='bouwjaar') target.buildYearRaw=value;
+      else if(col.field==='gedaan') target.completedRaw=value;
+      else if(col.field==='planning') target.plannedRaw=value;
+      else if(col.field==='partij') target.contractor=value;
+    });
+    Object.values(groups).forEach(item=>{
+      if(item.buildYearRaw || item.completedRaw || item.plannedRaw || item.contractor) records.push(item);
+    });
+  });
+  return records;
+}
+
+function findImportedProperty(street,house){
+  const streetKey=norm(street), houseKey=norm(house);
+  return rawProperties.find(p=>norm(p.address)===streetKey && norm(p.house_number)===houseKey) || null;
+}
+
+function currentTenantForProperty(propertyId){
+  const contract=rawContracts.find(c=>c.property_id===propertyId);
+  return contract ? rawTenants.find(t=>t.id===contract.tenant_id) || null : null;
+}
+
+async function importMaintenanceCsv(){
+  const input=el('maintenanceCsvFile');
+  const button=el('importMaintenanceCsvBtn');
+  const message=el('maintenanceImportMessage');
+  const results=el('maintenanceImportResults');
+  const file=input?.files?.[0];
+  if(!file){ message.textContent='Kies eerst de onderhouds-CSV.'; return; }
+
+  button.disabled=true;
+  message.textContent='CSV wordt gelezen en gekoppeld...';
+  results.innerHTML='';
+
+  try{
+    const rows=parseSemicolonCsv(await file.text());
+    const records=maintenanceCsvRecords(rows);
+    const existingMap=new Map(rawMaintenance.map(m=>[`${m.property_id}|${norm(m.title)}`,m]));
+    let added=0, updated=0, skipped=0;
+    const errors=[], warnings=[];
+
+    for(const record of records){
+      try{
+        if(!record.street || !record.house) throw new Error('Straatnaam of huisnummer ontbreekt.');
+        const property=findImportedProperty(record.street,record.house);
+        if(!property) throw new Error(`Object niet gevonden: ${record.street} ${record.house}`);
+
+        const tenant=currentTenantForProperty(property.id);
+        if(record.tenant && tenant?.name && norm(record.tenant)!==norm(tenant.name)){
+          warnings.push(`Rij ${record.rowNumber}: huurder “${record.tenant}” wijkt af van “${tenant.name}” bij ${record.street} ${record.house}. Onderhoud is wel aan het object gekoppeld.`);
+        }
+
+        const buildYear=parseBuildYear(record.buildYearRaw);
+        const completedDate=parseMaintenanceDate(record.completedRaw);
+        const plannedDate=parseMaintenanceDate(record.plannedRaw);
+        const key=`${property.id}|${norm(record.type)}`;
+        const existing=existingMap.get(key);
+        const calculatedStatus=plannedDate ? 'Gepland' : (completedDate ? 'Afgerond' : 'Open');
+
+        if(existing){
+          const payload={
+            title:record.type,
+            build_year:buildYear,
+            completed_date:completedDate,
+            planned_date:plannedDate,
+            contractor:record.contractor||null,
+            status:calculatedStatus
+          };
+          const res=await sb.from('maintenance').update(payload).eq('id',existing.id).select().single();
+          if(res.error) throw res.error;
+          existingMap.set(key,res.data);
+          updated++;
+        } else {
+          const payload={
+            property_id:property.id,
+            title:record.type,
+            build_year:buildYear,
+            completed_date:completedDate,
+            planned_date:plannedDate,
+            contractor:record.contractor||null,
+            status:calculatedStatus,
+            priority:'Normaal',
+            description:'Geïmporteerd uit onderhouds-CSV'
+          };
+          const res=await sb.from('maintenance').insert(payload).select().single();
+          if(res.error) throw res.error;
+          existingMap.set(key,res.data);
+          added++;
+        }
+      } catch(error){
+        errors.push(`Rij ${record.rowNumber} · ${record.street || '-'} ${record.house || '-'} · ${record.type}: ${error.message}`);
+      }
+    }
+
+    skipped=Math.max(0,records.length-added-updated-errors.length);
+    await loadData();
+    message.textContent=`Import klaar: ${added} toegevoegd, ${updated} bijgewerkt, ${errors.length} fouten.`;
+    const warningHtml=warnings.length ? `<div class="importNotice warning"><strong>Waarschuwingen (${warnings.length})</strong>${warnings.map(x=>`<span>${escHtml(x)}</span>`).join('')}</div>` : '';
+    const errorHtml=errors.length ? `<div class="importNotice danger"><strong>Fouten (${errors.length})</strong>${errors.map(x=>`<span>${escHtml(x)}</span>`).join('')}</div>` : '';
+    results.innerHTML=`<div class="importSummary"><span>Gelezen onderhoudsregels: <strong>${records.length}</strong></span><span>Toegevoegd: <strong>${added}</strong></span><span>Bijgewerkt: <strong>${updated}</strong></span>${skipped?`<span>Overgeslagen: <strong>${skipped}</strong></span>`:''}</div>${warningHtml}${errorHtml}`;
+  } catch(error){
+    console.error(error);
+    message.textContent='Importeren mislukt: '+error.message;
+  } finally {
+    button.disabled=false;
+  }
 }
 
 function render(){
@@ -455,7 +675,7 @@ function init(){
   el('logoutBtn').addEventListener('click', async()=>{ await sb.auth.signOut(); vastgoedData=[]; showLogin(); });
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{ if(e.target.id==='maintenanceObjectFilter'){ maintenanceObjectFilter=e.target.value; render(); } if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); } if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); } });
-  el('newPropertyBtn').addEventListener('click', openNewProperty); el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); }); el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty); el('closeMaintenanceModalBtn').addEventListener('click', closeMaintenanceModal); el('maintenanceEditForm').addEventListener('submit', saveMaintenanceEdit); el('deleteMaintenanceRowBtn').addEventListener('click', deleteMaintenanceEdit);
+  el('newPropertyBtn').addEventListener('click', openNewProperty); el('importMaintenanceCsvBtn').addEventListener('click', importMaintenanceCsv); el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); }); el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty); el('closeMaintenanceModalBtn').addEventListener('click', closeMaintenanceModal); el('maintenanceEditForm').addEventListener('submit', saveMaintenanceEdit); el('deleteMaintenanceRowBtn').addEventListener('click', deleteMaintenanceEdit);
   checkSession();
 }
 document.addEventListener('DOMContentLoaded', init);

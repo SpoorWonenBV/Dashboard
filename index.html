@@ -90,6 +90,16 @@
       </section>
 
       <section id="onderhoud" class="page">
+        <div class="panel maintenanceImportPanel">
+          <h2>Onderhoud importeren</h2>
+          <p>Upload het onderhoudsbestand met twee kopregels. De regels worden gekoppeld aan bestaande objecten via straatnaam en huisnummer. Een nieuwe upload werkt bestaand onderhoud per object en onderhoudstype bij.</p>
+          <div class="maintenanceImportActions">
+            <input id="maintenanceCsvFile" type="file" accept=".csv,text/csv">
+            <button id="importMaintenanceCsvBtn" type="button">Onderhouds-CSV importeren</button>
+          </div>
+          <p id="maintenanceImportMessage" class="formMessage"></p>
+          <div id="maintenanceImportResults"></div>
+        </div>
         <div id="maintenanceOverview"></div>
       </section>
 
