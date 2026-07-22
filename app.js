@@ -96,6 +96,7 @@ async function removeUniformLogoBackground(url){
       transparentLogoCache[url]=url;
       return url;
     }
+
     const base=[0,0,0,255];
     for(let c=0;c<3;c++) base[c]=Math.round(opaque.reduce((sum,p)=>sum+p[c],0)/opaque.length);
 
@@ -106,32 +107,101 @@ async function removeUniformLogoBackground(url){
       return url;
     }
 
+    const distanceAt=idx=>{
+      const i=idx*4;
+      return colorDistance([data[i],data[i+1],data[i+2],data[i+3]],base);
+    };
+
+    // Verwijdert ook de witte waas langs letters, zodat er geen lichte rand achterblijft.
+    const clearPixel=(idx,inner=false)=>{
+      const i=idx*4;
+      const distance=distanceAt(idx);
+      const fullyTransparent=inner?34:40;
+      const softLimit=inner?105:88;
+      if(distance<=fullyTransparent){
+        data[i+3]=0;
+        return;
+      }
+      if(distance>=softLimit) return;
+
+      const alpha=Math.max(0.03,Math.min(1,(distance-fullyTransparent)/(softLimit-fullyTransparent)));
+      const originalAlpha=data[i+3]/255;
+
+      // Haal de gemengde achtergrondkleur uit anti-aliased randpixels.
+      for(let channel=0;channel<3;channel++){
+        const foreground=(data[i+channel]-(1-alpha)*base[channel])/alpha;
+        data[i+channel]=Math.max(0,Math.min(255,Math.round(foreground)));
+      }
+      data[i+3]=Math.round(originalAlpha*alpha*255);
+    };
+
+    // Stap 1: verwijder de egale achtergrond die met de buitenrand verbonden is.
     const visited=new Uint8Array(width*height);
     const queue=new Int32Array(width*height);
     let head=0,tail=0;
-    const add=(x,y)=>{
+    const addOuter=(x,y)=>{
       if(x<0||y<0||x>=width||y>=height) return;
       const idx=y*width+x;
       if(visited[idx]) return;
       const i=idx*4;
-      const current=[data[i],data[i+1],data[i+2],data[i+3]];
-      if(current[3]===0 || colorDistance(current,base)<=82){
+      if(data[i+3]===0 || distanceAt(idx)<=88){
         visited[idx]=1;
         queue[tail++]=idx;
       }
     };
 
-    for(let x=0;x<width;x++){add(x,0);add(x,height-1);}
-    for(let y=0;y<height;y++){add(0,y);add(width-1,y);}
+    for(let x=0;x<width;x++){addOuter(x,0);addOuter(x,height-1);}
+    for(let y=0;y<height;y++){addOuter(0,y);addOuter(width-1,y);}
 
     while(head<tail){
       const idx=queue[head++];
       const x=idx%width;
       const y=(idx/width)|0;
-      const i=idx*4;
-      const distance=colorDistance([data[i],data[i+1],data[i+2],data[i+3]],base);
-      data[i+3]=distance<=40?0:Math.min(data[i+3],Math.round(((distance-40)/42)*255));
-      add(x-1,y);add(x+1,y);add(x,y-1);add(x,y+1);
+      clearPixel(idx,false);
+      addOuter(x-1,y);addOuter(x+1,y);addOuter(x,y-1);addOuter(x,y+1);
+    }
+
+    // Stap 2: verwijder kleine, ingesloten achtergrondvlakjes in letters zoals O, P, R en B.
+    // Deze vlakjes raken de buitenrand niet en bleven daardoor in de vorige versie wit.
+    const componentSeen=new Uint8Array(width*height);
+    const componentQueue=new Int32Array(width*height);
+    const componentPixels=[];
+    const maxEnclosedArea=Math.max(64,Math.round(width*height*0.12));
+
+    for(let startIdx=0;startIdx<width*height;startIdx++){
+      if(visited[startIdx]||componentSeen[startIdx]) continue;
+      const i=startIdx*4;
+      if(data[i+3]===0||distanceAt(startIdx)>105) continue;
+
+      let cHead=0,cTail=0;
+      componentPixels.length=0;
+      componentSeen[startIdx]=1;
+      componentQueue[cTail++]=startIdx;
+      let touchesBorder=false;
+
+      while(cHead<cTail){
+        const idx=componentQueue[cHead++];
+        componentPixels.push(idx);
+        const x=idx%width;
+        const y=(idx/width)|0;
+        if(x===0||y===0||x===width-1||y===height-1) touchesBorder=true;
+
+        const neighbours=[idx-1,idx+1,idx-width,idx+width];
+        for(const next of neighbours){
+          if(next<0||next>=width*height||componentSeen[next]||visited[next]) continue;
+          const nx=next%width;
+          const ny=(next/width)|0;
+          if(Math.abs(nx-x)+Math.abs(ny-y)!==1) continue;
+          const ni=next*4;
+          if(data[ni+3]===0||distanceAt(next)>105) continue;
+          componentSeen[next]=1;
+          componentQueue[cTail++]=next;
+        }
+      }
+
+      if(!touchesBorder&&componentPixels.length<=maxEnclosedArea){
+        componentPixels.forEach(idx=>clearPixel(idx,true));
+      }
     }
 
     ctx.putImageData(image,0,0);
