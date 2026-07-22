@@ -418,34 +418,105 @@ function proposalLetterData(){
 
 function createRentLetterHtml(data){
   const r=data.r;
-  const percentage=Number(data.calculated_percentage||0).toFixed(2).replace('.',',');
   const effectiveLong=new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${data.effective_date}T00:00:00Z`));
+  const currentRent=Number(data.current_rent||0);
+  const serviceCosts=Number(data.service_costs||0);
+  const finalRent=Number(data.final_rent||0);
+  const oldIndex=Number(data.old_index||0);
+  const newIndex=Number(data.new_index||0);
+  const ratio=oldIndex>0&&newIndex>0?newIndex/oldIndex:1;
+  const indexedServiceCosts=Math.round(serviceCosts*ratio*100)/100;
+  const currentTotal=Math.round((currentRent+serviceCosts)*100)/100;
+  const rentIncrease=Math.round((finalRent-currentRent)*100)/100;
+  const finalTotal=Math.round((finalRent+indexedServiceCosts)*100)/100;
+  const amount=n=>new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
+  const indexNumber=n=>new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
   const oldPeriod=longMonthYear(`${data.old_period}-01`);
   const newPeriod=longMonthYear(`${data.new_period}-01`);
-  return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><title>Concept huurverhoging ${escHtml(r.object)}</title><style>
-    body{font-family:Arial,sans-serif;color:#111;max-width:760px;margin:40px auto;padding:0 28px;line-height:1.55}h1{font-size:22px;margin:0 0 4px}.muted{color:#555}.box{background:#f5f7fa;border:1px solid #d9e0e8;padding:16px;margin:22px 0}.row{display:flex;justify-content:space-between;gap:20px;padding:5px 0}.notice{padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;margin-bottom:22px}.print{margin-bottom:20px;padding:10px 14px;background:#172033;color:white;border:0;border-radius:8px;cursor:pointer}@media print{.print,.notice{display:none}body{margin:0;max-width:none}}</style></head><body>
-    <button class="print" onclick="window.print()">Afdrukken / opslaan als PDF</button>
-    <div class="notice"><strong>Concept:</strong> controleer de berekening en brieftekst. Deze brief is niet automatisch verzonden.</div>
-    <h1>${escHtml(branding.company_name)}</h1><p class="muted">${escHtml(branding.dashboard_name)}</p>
-    <p>${escHtml(r.huurder)}<br>${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</p>
-    <p><strong>Betreft: huurprijsaanpassing ${escHtml(r.object)}</strong></p>
-    <p>Geachte heer/mevrouw,</p>
-    <p>Hierbij informeren wij u over de jaarlijkse aanpassing van de huurprijs van het gehuurde object. De aanpassing gaat in op <strong>${effectiveLong}</strong>.</p>
-    <p>De berekening is gebaseerd op de consumentenprijsindex (CPI), reeks 2025=100, van het CBS, tabel 86141NED, categorie 000000 Alle bestedingen.</p>
-    <div class="box">
-      <div class="row"><span>Huidige maandhuur exclusief btw</span><strong>${euro2(data.current_rent)}</strong></div>
-      <div class="row"><span>CPI ${oldPeriod}</span><strong>${String(data.old_index).replace('.',',')}</strong></div>
-      <div class="row"><span>CPI ${newPeriod}</span><strong>${String(data.new_index).replace('.',',')}</strong></div>
-      <div class="row"><span>Berekende verhoging</span><strong>${percentage}%</strong></div>
-      <div class="row"><span>Nieuwe maandhuur exclusief btw</span><strong>${euro2(data.final_rent)}</strong></div>
-      <div class="row"><span>Servicekosten</span><strong>${euro2(data.service_costs)}</strong></div>
-    </div>
-    <p>De berekening luidt: ${String(data.new_index).replace('.',',')} ÷ ${String(data.old_index).replace('.',',')} × ${euro2(data.current_rent)} = <strong>${euro2(data.final_rent)}</strong>.</p>
-    <p>Wij verzoeken u bij toekomstige betalingen rekening te houden met het nieuwe huurbedrag.</p>
-    <p>Met vriendelijke groet,</p><p><strong>${escHtml(branding.company_name)}</strong></p>
+  const recipientAddress=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
+  const recipientCity=[recipientAddress,r.stad].filter(Boolean).join(', ');
+  const manualOverride=Number.isFinite(Number(data.calculated_rent))&&Math.abs(finalRent-Number(data.calculated_rent))>0.01;
+  const overrideNote=manualOverride
+    ? `<div class="overrideNote"><strong>Handmatige aanpassing:</strong> de definitieve kale huur is vastgesteld op € ${amount(finalRent)}.${data.override_reason?` Reden: ${escHtml(data.override_reason)}.`:''}</div>`
+    : '';
+
+  return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><title>Concept huuraanpassing ${escHtml(r.object)}</title><style>
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{background:#eef2f7;color:#000;font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.28}
+    .toolbar{width:210mm;margin:18px auto 0;display:flex;align-items:center;gap:12px;padding:0 2mm}
+    .printButton{padding:10px 14px;border:0;border-radius:8px;background:#172033;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer}
+    .conceptNotice{font:13px Arial,sans-serif;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px}
+    .sheet{width:210mm;min-height:297mm;margin:12px auto 28px;background:#fff;padding:25.4mm 19.05mm;box-shadow:0 18px 55px rgba(15,23,42,.16)}
+    .recipient{min-height:15.1mm;line-height:5.05mm}
+    .subject{display:grid;grid-template-columns:25mm 1fr;column-gap:3mm;margin-top:25.2mm;line-height:5.05mm}
+    .greeting{margin:15.1mm 0 0}
+    p{margin:0}
+    .bodyText{margin-top:5.05mm}
+    .calculationIntro{margin-top:5.05mm}
+    .calculation{margin-top:5.05mm;display:grid;grid-template-columns:minmax(0,1fr) 27mm 7mm 31mm;align-items:baseline}
+    .calculation .cell{min-height:5.05mm;line-height:5.05mm;white-space:nowrap}
+    .calculation .description{grid-column:1}
+    .calculation .descriptionWide{grid-column:1 / 3}
+    .calculation .indexValue{grid-column:2;text-align:left}
+    .calculation .currency{grid-column:3;text-align:right;padding-right:1.5mm}
+    .calculation .number{grid-column:4;text-align:right;font-variant-numeric:tabular-nums}
+    .calculation .heading{font-weight:700;font-style:italic}
+    .calculation .underline{border-bottom:1px solid #000}
+    .calculation .finalCurrency,.calculation .finalNumber{border-top:1px solid #000;border-bottom:3px double #000;font-weight:700;font-style:italic}
+    .calculation .finalDescription{font-weight:700;font-style:italic}
+    .blankRow{grid-column:1 / 5;min-height:5.05mm}
+    .overrideNote{margin-top:6mm;padding:3mm;border:1px solid #aaa;font-size:9.5pt;line-height:1.35}
+    @page{size:A4 portrait;margin:25.4mm 19.05mm}
+    @media print{
+      body{background:#fff}
+      .toolbar{display:none!important}
+      .sheet{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+    }
+  </style></head><body>
+    <div class="toolbar"><button class="printButton" onclick="window.print()">Afdrukken / opslaan als PDF</button><div class="conceptNotice"><strong>Concept:</strong> controleer de brief. Er wordt niets automatisch verzonden.</div></div>
+    <main class="sheet">
+      <div class="recipient">
+        <div>${escHtml(r.huurder)}</div>
+        <div>${escHtml(r.object)}</div>
+        <div>${escHtml(recipientCity||'-')}</div>
+      </div>
+
+      <div class="subject"><div>Betreft :</div><div>Huuraanpassing per ${escHtml(effectiveLong)}</div></div>
+
+      <p class="greeting">Geachte mevrouw / heer,</p>
+
+      <div class="bodyText">
+        <p>Hierbij delen wij u mede, dat de huur van het in hoofde genoemde object ingaande</p>
+        <p>${escHtml(effectiveLong)} zal worden verhoogd overeenkomstig artikel 4 van de met u gesloten</p>
+        <p>overeenkomst.</p>
+      </div>
+
+      <p class="calculationIntro">De berekening van de ingaande ${escHtml(effectiveLong)} verschuldigde huurprijs is als volgt:</p>
+
+      <div class="calculation">
+        <div class="cell descriptionWide">De thans verschuldigde huurprijs bedraagt excl. BTW</div><div class="cell currency">€</div><div class="cell number">${amount(currentTotal)}</div>
+        <div class="blankRow"></div>
+        <div class="cell descriptionWide">Af : voorschot servicekosten</div><div class="cell currency">€</div><div class="cell number underline">${amount(serviceCosts)}</div>
+        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(currentRent)}</div>
+        <div class="blankRow"></div>
+        <div class="cell description">Prijsindexcijfer ${escHtml(newPeriod)}</div><div class="cell indexValue">${indexNumber(newIndex)}</div><div class="cell currency"></div><div class="cell number"></div>
+        <div class="cell description">Prijsindexcijfer ${escHtml(oldPeriod)}</div><div class="cell indexValue">${indexNumber(oldIndex)}</div><div class="cell currency"></div><div class="cell number"></div>
+        <div class="blankRow"></div>
+        <div class="cell descriptionWide heading">Huurverhoging</div><div class="cell currency"></div><div class="cell number"></div>
+        <div class="cell descriptionWide">(=${indexNumber(newIndex)} / ${indexNumber(oldIndex)} x ${amount(currentRent)}) - ${amount(currentRent)} =</div><div class="cell currency">€</div><div class="cell number underline">${amount(rentIncrease)}</div>
+        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(finalRent)}</div>
+        <div class="blankRow"></div>
+        <div class="cell descriptionWide">Bij: voor de kosten van bijkomende leveringen en diensten</div><div class="cell currency"></div><div class="cell number"></div>
+        <div class="cell descriptionWide heading">Verhoging</div><div class="cell currency"></div><div class="cell number"></div>
+        <div class="cell descriptionWide">(=${indexNumber(newIndex)} / ${indexNumber(oldIndex)} x ${amount(serviceCosts)}) =</div><div class="cell currency">€</div><div class="cell number">${amount(indexedServiceCosts)}</div>
+        <div class="cell descriptionWide"></div><div class="cell currency"></div><div class="cell number underline"></div>
+        <div class="cell descriptionWide finalDescription">De per ${escHtml(effectiveLong)} verschuldigde huurprijs bedraagt excl. BTW</div><div class="cell currency finalCurrency">€</div><div class="cell number finalNumber">${amount(finalTotal)}</div>
+      </div>
+      ${overrideNote}
+    </main>
   </body></html>`;
 }
-
 function openRentConceptLetter(){
   try{
     const data=proposalLetterData();
