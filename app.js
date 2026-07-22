@@ -46,16 +46,19 @@ function validHex(value,fallback){return /^#[0-9a-f]{6}$/i.test(String(value||''
 function setImage(id,url){
   const node=el(id);
   if(!node) return;
-  node.onerror=()=>{
+  const area=id==='sidebarLogo' ? el('sidebarLogoArea') : null;
+  const hideImage=()=>{
     node.classList.add('hidden');
     node.removeAttribute('src');
+    if(area) area.classList.add('hidden');
   };
+  node.onerror=hideImage;
   if(url){
     node.src=url;
     node.classList.remove('hidden');
+    if(area) area.classList.remove('hidden');
   }else{
-    node.classList.add('hidden');
-    node.removeAttribute('src');
+    hideImage();
   }
 }
 
@@ -934,7 +937,7 @@ async function deleteProperty(){ const id=el('propertyId').value; if(!id || !con
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{ selectedPropertyId=null; setPage(btn.dataset.page,btn.textContent); }));
+  document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{ selectedPropertyId=null; setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim()); }));
   document.body.addEventListener('click', e=>{ const detail=e.target.closest('.detailBtn'); const edit=e.target.closest('.editBtn'); const upload=e.target.closest('.uploadDocBtn'); const openDoc=e.target.closest('.openDocBtn'); const deleteDoc=e.target.closest('.deleteDocBtn'); const addHist=e.target.closest('.addHistBtn'); const deleteHist=e.target.closest('.deleteHistBtn'); const editMaint=e.target.closest('.editMaintBtn'); const newMaint=e.target.closest('.newMaintBtn'); if(detail) renderDetail(detail.dataset.id); if(edit) openEditProperty(edit.dataset.id); if(upload) uploadDocument(upload.dataset.id); if(openDoc) openDocument(openDoc.dataset.path); if(deleteDoc) deleteDocument(deleteDoc.dataset.id, deleteDoc.dataset.path); if(addHist) addMaintenanceHistory(addHist.dataset.id); if(deleteHist) deleteMaintenanceHistory(deleteHist.dataset.id); if(editMaint){ const row=findMaintenanceRowByKey(editMaint.dataset.key); if(row) openMaintenanceModal('edit', row); } if(newMaint) openMaintenanceModal('new', null, newMaint.dataset.id || ''); });
   el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const {error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });

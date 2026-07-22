@@ -163,3 +163,123 @@
   .brandText strong{font-size:21px}
   .brandText span{font-size:20px}
 }
+
+/* v19: grotere branding en pictogrammen in de zijbalk */
+.sidebar{
+  width:320px;
+  flex:0 0 320px;
+  padding:30px 26px 24px;
+  display:flex;
+  flex-direction:column;
+}
+.brandBlock{
+  gap:16px;
+  margin-bottom:30px;
+}
+.brandLogoArea{
+  width:100%;
+  min-height:118px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  overflow:hidden;
+}
+.sidebarLogo{
+  display:block;
+  width:auto;
+  max-width:238px;
+  height:auto;
+  max-height:112px;
+  object-fit:contain;
+  object-position:left center;
+}
+.brandText{
+  gap:0;
+}
+.brandText strong{
+  font-size:30px;
+  line-height:1.15;
+  letter-spacing:-.35px;
+}
+.brandText span{
+  margin-top:7px;
+  font-size:28px;
+  line-height:1.12;
+}
+.nav,.logoutBtn{
+  display:flex;
+  align-items:center;
+  gap:13px;
+  min-height:48px;
+  padding:12px 14px;
+  font-size:15px;
+  line-height:1.2;
+}
+.navIcon{
+  width:22px;
+  height:22px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 22px;
+}
+.navIcon svg{
+  width:22px;
+  height:22px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.navLabel{
+  display:block;
+  font-weight:700;
+}
+.settingsNav{
+  margin-top:22px;
+  padding-top:18px;
+  border-top:1px solid rgba(255,255,255,.12);
+  border-radius:0 0 12px 12px;
+}
+.logoutBtn{
+  margin-top:auto;
+  background:#7f1d1d;
+}
+.brandingPreview .previewLogo{
+  max-width:210px;
+  max-height:96px;
+  height:auto;
+}
+.previewBrandText strong{font-size:24px}
+.previewBrandText span{font-size:22px}
+
+@media(max-width:900px){
+  .sidebar{
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    padding:20px 18px;
+  }
+  .brandBlock{
+    grid-column:1/-1;
+    margin-bottom:12px;
+  }
+  .brandLogoArea{min-height:88px}
+  .sidebarLogo{max-width:200px;max-height:84px}
+  .brandText strong{font-size:26px}
+  .brandText span{font-size:24px}
+  .settingsNav{margin-top:7px;padding-top:12px;border-top:0;border-radius:12px}
+  .logoutBtn{margin-top:7px}
+}
+
+@media(max-width:520px){
+  .sidebar{grid-template-columns:1fr 1fr}
+  .nav,.logoutBtn{font-size:13px;padding:10px 11px;gap:9px}
+  .navIcon,.navIcon svg{width:19px;height:19px;flex-basis:19px}
+  .brandLogoArea{min-height:76px}
+  .sidebarLogo{max-width:175px;max-height:72px}
+  .brandText strong{font-size:23px}
+  .brandText span{font-size:22px}
+}
