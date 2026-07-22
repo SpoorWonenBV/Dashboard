@@ -58,6 +58,10 @@
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.2c-.8-.8-1.9-1.2-3.1-1.2-2.3 0-4.1 2.2-4.1 5s1.8 5 4.1 5c1.2 0 2.3-.4 3.1-1.2M6.5 10.5h7M6.5 13.5h7"/></svg></span>
         <span class="navLabel">Financieel</span>
       </button>
+      <button class="nav" data-page="agenda" data-title="Agenda">
+        <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span>
+        <span class="navLabel">Agenda</span>
+      </button>
       <button class="nav" data-page="meldingen" data-title="Meldingen">
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>
         <span class="navLabel">Meldingen</span>
@@ -180,6 +184,48 @@
           <div id="serviceCostOverview"></div>
           <div class="panel financialTablePanel">
             <div class="financialTableWrap"><table id="serviceCostTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="agenda" class="page">
+        <div class="panel agendaIntro">
+          <div>
+            <h2>Kalender en agenda</h2>
+            <p>Automatisch overzicht van contractmomenten, onderhoud, huurverhogingen, inspecties en energielabels uit het dashboard.</p>
+          </div>
+          <div class="agendaControls">
+            <button id="agendaPrevBtn" class="secondaryBtn agendaNavBtn" type="button" aria-label="Vorige maand">←</button>
+            <button id="agendaTodayBtn" class="secondaryBtn" type="button">Vandaag</button>
+            <button id="agendaNextBtn" class="secondaryBtn agendaNavBtn" type="button" aria-label="Volgende maand">→</button>
+          </div>
+        </div>
+
+        <div class="agendaTopbar">
+          <strong id="agendaMonthLabel" class="agendaMonthLabel">-</strong>
+          <label class="agendaTypeFilter">Categorie
+            <select id="agendaTypeFilter">
+              <option value="all">Alle gebeurtenissen</option>
+              <option value="contract">Contracten</option>
+              <option value="maintenance">Onderhoud</option>
+              <option value="finance">Financieel</option>
+              <option value="inspection">Inspecties</option>
+              <option value="energy">Energielabels</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="agendaSummary" class="cards agendaSummaryCards"></div>
+        <div id="agendaCalendar" class="agendaCalendar"></div>
+
+        <div class="agendaLists">
+          <div class="panel">
+            <h2>Komende 90 dagen</h2>
+            <div id="agendaUpcomingList" class="agendaEventList"></div>
+          </div>
+          <div class="panel">
+            <h2>Afgelopen 90 dagen</h2>
+            <div id="agendaRecentList" class="agendaEventList"></div>
           </div>
         </div>
       </section>

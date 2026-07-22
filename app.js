@@ -64,6 +64,8 @@ let serviceCostYear=new Date().getFullYear()-1;
 let activeServiceCostContext=null;
 let cbsIndexCache={loaded:false,loading:null,loadedAt:null,measureCode:'',categoryCode:'',values:new Map(),error:''};
 let activeRentContext=null;
+let agendaCursor=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+let agendaTypeFilter='all';
 const euro2=n=>new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
 
 async function fetchODataAll(url){
@@ -2514,6 +2516,181 @@ function renderContractOverview(data){
     <div class="card"><span>Controle nodig</span><strong>${needsCheck}</strong></div>
   </div>`;
 }
+
+function agendaIsoFromDate(date){
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+function agendaDateFromIso(value){
+  const parts=isoParts(value);
+  if(!parts) return null;
+  const date=new Date(parts.year,parts.month-1,parts.day);
+  return Number.isNaN(date.getTime())?null:date;
+}
+function agendaDayDifference(value){
+  const date=agendaDateFromIso(value);
+  if(!date) return null;
+  const today=agendaDateFromIso(isoToday());
+  return Math.round((date-today)/86400000);
+}
+function agendaWhenText(value){
+  const days=agendaDayDifference(value);
+  if(days===null) return '';
+  if(days===0) return 'Vandaag';
+  if(days===1) return 'Morgen';
+  if(days===-1) return 'Gisteren';
+  if(days>0) return `Over ${days} dagen`;
+  return `${Math.abs(days)} dagen geleden`;
+}
+function agendaCategoryLabel(type){
+  return ({contract:'Contract',maintenance:'Onderhoud',finance:'Financieel',inspection:'Inspectie',energy:'Energielabel'})[type]||'Overig';
+}
+function addAgendaEvent(target,event,seen){
+  if(!event?.date||!isoParts(event.date)) return;
+  const key=[event.date,event.type,event.title,event.objectId||'',event.subtitle||''].join('|');
+  if(seen.has(key)) return;
+  seen.add(key);
+  target.push(event);
+}
+function buildAgendaEvents(data){
+  const events=[];
+  const seen=new Set();
+  const currentYear=new Date().getFullYear();
+  const years=new Set([
+    currentYear-1,currentYear,currentYear+1,currentYear+2,
+    agendaCursor.getFullYear()-1,agendaCursor.getFullYear(),agendaCursor.getFullYear()+1
+  ]);
+
+  data.forEach(r=>{
+    const address=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
+    const objectLine=[r.object,address].filter(Boolean).join(' · ');
+    if(r.startdatum_contract){
+      addAgendaEvent(events,{date:r.startdatum_contract,type:'contract',title:'Contract gestart',subtitle:objectLine,objectId:r.id},seen);
+    }
+    if(!r.contract_onbepaalde&&r.opzegdatum){
+      addAgendaEvent(events,{date:r.opzegdatum,type:'contract',title:'Uiterste opzegdatum',subtitle:objectLine,objectId:r.id},seen);
+    }
+    if(!r.contract_onbepaalde&&r.einddatum_contract){
+      addAgendaEvent(events,{date:r.einddatum_contract,type:'contract',title:r.contract_opgezegd?'Opgezegd contract eindigt':'Contract eindigt',subtitle:objectLine,objectId:r.id},seen);
+    }
+    if(r.energielabel_geldig_tot){
+      addAgendaEvent(events,{date:r.energielabel_geldig_tot,type:'energy',title:'Energielabel verloopt',subtitle:objectLine,objectId:r.id},seen);
+    }
+    if(r.scope_inspectie_geldig_tot){
+      addAgendaEvent(events,{date:r.scope_inspectie_geldig_tot,type:'inspection',title:'Scope/inspectie',subtitle:objectLine,objectId:r.id},seen);
+    }
+    const monthIndex=monthMap[norm(r.maand_huurverhoging)];
+    if(monthIndex!==undefined){
+      years.forEach(year=>{
+        addAgendaEvent(events,{
+          date:agendaIsoFromDate(new Date(year,monthIndex,1)),
+          type:'finance',
+          title:'Huurverhoging',
+          subtitle:objectLine,
+          objectId:r.id
+        },seen);
+      });
+    }
+  });
+
+  maintenanceSourceRows(data).forEach(row=>{
+    const objectLine=[row.object,row.address].filter(Boolean).join(' · ');
+    if(row.done_date){
+      addAgendaEvent(events,{
+        date:row.done_date,
+        type:'maintenance',
+        title:`${row.type||'Onderhoud'} uitgevoerd`,
+        subtitle:objectLine,
+        objectId:row.objectId
+      },seen);
+    }
+    if(row.planned_date&&row.planned_date!==row.done_date&&maintenanceStatusLabel(row.status)!=='Afgerond'){
+      addAgendaEvent(events,{
+        date:row.planned_date,
+        type:'maintenance',
+        title:`${row.type||'Onderhoud'} gepland`,
+        subtitle:objectLine,
+        objectId:row.objectId
+      },seen);
+    }
+  });
+
+  return events.sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title,'nl',{sensitivity:'base'}));
+}
+function agendaFilteredEvents(data){
+  const all=buildAgendaEvents(data);
+  return agendaTypeFilter==='all'?all:all.filter(event=>event.type===agendaTypeFilter);
+}
+function agendaListHtml(events,emptyText){
+  if(!events.length) return `<p class="agendaEmpty">${emptyText}</p>`;
+  return events.slice(0,30).map(event=>{
+    const date=agendaDateFromIso(event.date);
+    const dateText=date?new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'short',year:'numeric'}).format(date):dateFmt(event.date);
+    return `<button class="agendaListItem ${event.type} ${event.objectId?'detailBtn':''}" type="button" ${event.objectId?`data-id="${escAttr(event.objectId)}"`:''}>
+      <span class="agendaListDate">${escHtml(dateText)}</span>
+      <span class="agendaListMain"><strong>${escHtml(event.title)}</strong><span>${escHtml(event.subtitle||agendaCategoryLabel(event.type))}</span></span>
+      <span class="agendaListWhen">${escHtml(agendaWhenText(event.date))}</span>
+    </button>`;
+  }).join('');
+}
+function renderAgenda(data){
+  const calendar=el('agendaCalendar');
+  if(!calendar) return;
+  const events=agendaFilteredEvents(data);
+  const year=agendaCursor.getFullYear();
+  const month=agendaCursor.getMonth();
+  const todayIso=isoToday();
+  const firstDay=new Date(year,month,1);
+  const lastDay=new Date(year,month+1,0);
+  const gridStart=new Date(year,month,1-((firstDay.getDay()+6)%7));
+  const monthLabel=new Intl.DateTimeFormat('nl-NL',{month:'long',year:'numeric'}).format(firstDay);
+  if(el('agendaMonthLabel')) el('agendaMonthLabel').textContent=monthLabel;
+  if(el('agendaTypeFilter')) el('agendaTypeFilter').value=agendaTypeFilter;
+
+  const monthStart=agendaIsoFromDate(firstDay);
+  const monthEnd=agendaIsoFromDate(lastDay);
+  const monthEvents=events.filter(event=>event.date>=monthStart&&event.date<=monthEnd);
+  const upcoming30=events.filter(event=>{const d=agendaDayDifference(event.date);return d!==null&&d>=0&&d<=30;});
+  const upcoming90=events.filter(event=>{const d=agendaDayDifference(event.date);return d!==null&&d>=0&&d<=90;});
+  const recent90=events.filter(event=>{const d=agendaDayDifference(event.date);return d!==null&&d<0&&d>=-90;}).sort((a,b)=>b.date.localeCompare(a.date));
+
+  if(el('agendaSummary')){
+    el('agendaSummary').innerHTML=`
+      <div class="card"><span>Deze maand</span><strong>${monthEvents.length}</strong></div>
+      <div class="card"><span>Komende 30 dagen</span><strong>${upcoming30.length}</strong></div>
+      <div class="card"><span>Komende 90 dagen</span><strong>${upcoming90.length}</strong></div>
+      <div class="card"><span>Afgelopen 90 dagen</span><strong>${recent90.length}</strong></div>`;
+  }
+
+  const byDate={};
+  events.forEach(event=>(byDate[event.date]||=[]).push(event));
+  const weekdays=['Ma','Di','Wo','Do','Vr','Za','Zo'];
+  let inner=weekdays.map(day=>`<div class="agendaWeekday">${day}</div>`).join('');
+  for(let index=0;index<42;index++){
+    const date=new Date(gridStart);
+    date.setDate(gridStart.getDate()+index);
+    const iso=agendaIsoFromDate(date);
+    const dayEvents=byDate[iso]||[];
+    const classes=['agendaDay'];
+    if(date.getMonth()!==month) classes.push('outsideMonth');
+    if(iso===todayIso) classes.push('today');
+    const visible=dayEvents.slice(0,3).map(event=>`<button class="agendaEvent ${event.type} ${event.objectId?'detailBtn':''}" type="button" title="${escAttr(`${event.title} · ${event.subtitle||''}`)}" ${event.objectId?`data-id="${escAttr(event.objectId)}"`:''}>${escHtml(event.title)}</button>`).join('');
+    const more=dayEvents.length>3?`<span class="agendaMore">+${dayEvents.length-3} meer</span>`:'';
+    inner+=`<div class="${classes.join(' ')}"><div class="agendaDayHeader"><span class="agendaDayNumber">${date.getDate()}</span></div><div class="agendaDayEvents">${visible}${more}</div></div>`;
+  }
+  calendar.innerHTML=`<div class="agendaCalendarInner">${inner}</div>`;
+  if(el('agendaUpcomingList')) el('agendaUpcomingList').innerHTML=agendaListHtml(upcoming90,'Geen gebeurtenissen in de komende 90 dagen.');
+  if(el('agendaRecentList')) el('agendaRecentList').innerHTML=agendaListHtml(recent90,'Geen gebeurtenissen in de afgelopen 90 dagen.');
+}
+function shiftAgendaMonth(months){
+  agendaCursor=new Date(agendaCursor.getFullYear(),agendaCursor.getMonth()+months,1);
+  renderAgenda(filtered());
+}
+function agendaToday(){
+  const now=new Date();
+  agendaCursor=new Date(now.getFullYear(),now.getMonth(),1);
+  renderAgenda(filtered());
+}
+
 function render(){
   const data=filtered(), notes=notificationItems(data);
   renderCharts(data);
@@ -2531,6 +2708,7 @@ function render(){
   refreshPhotos();
   renderContractOverview(data);
   renderFinancialPage(data);
+  renderAgenda(data);
   el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Oorspr. einddatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+data.map(r=>{
     const originalEnd=r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract);
     const renewalCount=r.aantal_verlengingen?`<span class="subtle">${r.aantal_verlengingen}× toegepast</span>`:'';
@@ -2742,6 +2920,10 @@ function init(){
   el('rentLetterBtn')?.addEventListener('click',openRentConceptLetter);
   el('applyRentIncreaseBtn')?.addEventListener('click',applyRentIncrease);
   document.querySelectorAll('.financialTab').forEach(button=>button.addEventListener('click',()=>setFinancialTab(button.dataset.financialTab)));
+  el('agendaPrevBtn')?.addEventListener('click',()=>shiftAgendaMonth(-1));
+  el('agendaTodayBtn')?.addEventListener('click',agendaToday);
+  el('agendaNextBtn')?.addEventListener('click',()=>shiftAgendaMonth(1));
+  el('agendaTypeFilter')?.addEventListener('change',event=>{agendaTypeFilter=event.target.value||'all';renderAgenda(filtered());});
   el('closeServiceCostModalBtn')?.addEventListener('click',closeServiceCostModal);
   el('serviceCostForm')?.addEventListener('submit',saveServiceCostSettlement);
   el('serviceMonthsCharged')?.addEventListener('input',updateServiceCostModalCalculation);
