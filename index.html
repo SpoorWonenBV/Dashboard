@@ -247,7 +247,7 @@
           <label>Onderhoudsdatum<input id="maintenancePlannedDate" type="date"></label>
           <label>Kosten<input id="maintenanceCost" type="number" step="0.01"></label>
           <label>Prioriteit<input id="maintenancePriority" value="Normaal"></label>
-          <label>Status onderhoud<input id="maintenanceStatus" value="Open"></label>
+          <label>Status onderhoud<select id="maintenanceStatus"><option>Te plannen</option><option>Gepland</option><option>Afgerond</option></select></label>
         </div>
         <label>Beschrijving<textarea id="maintenanceDescription" rows="3"></textarea></label>
 
@@ -277,7 +277,7 @@
           <label>Gedaan<input id="mEditDoneDate" type="date"></label>
           <label>Planning<input id="mEditPlannedDate" type="date"></label>
           <label>Partij<input id="mEditSupplier"></label>
-          <label>Status<select id="mEditStatus"><option>Open</option><option>Gepland</option><option>Afgerond</option><option>Controle nodig</option></select></label>
+          <label>Status<select id="mEditStatus"><option>Te plannen</option><option>Gepland</option><option>Afgerond</option></select></label>
           <label>Kosten<input id="mEditCost" type="number" step="0.01"></label>
         </div>
         <label>Beschrijving<textarea id="mEditDescription" rows="3"></textarea></label>
