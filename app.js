@@ -1385,6 +1385,39 @@ const monthMap={januari:0,februari:1,maart:2,april:3,mei:4,juni:5,juli:6,augustu
 function daysUntilRentIncrease(monthName){ if(!monthName) return null; const key=String(monthName).trim().toLowerCase(); if(!(key in monthMap)) return null; const today=new Date(); today.setHours(0,0,0,0); let target=new Date(today.getFullYear(), monthMap[key], 1); if(target<today) target=new Date(today.getFullYear()+1, monthMap[key], 1); return Math.ceil((target-today)/(1000*60*60*24)); }
 function rentIncreaseStatus(monthName){ const days=daysUntilRentIncrease(monthName); if(days===null) return ['Niet ingesteld','warning']; if(days<=30) return ['Deze maand/komende 30 dagen','danger']; if(days<=60) return ['Binnen 60 dagen','warning']; return ['Op orde','ok']; }
 function actionItem(sev,type,title,text,objectId){ return {sev,type,title,text,objectId}; }
+const SIDEBAR_STORAGE_KEY='vastgoedSidebarCollapsed';
+function setSidebarCollapsed(collapsed,{persist=true}={}){
+  const sidebar=document.querySelector('.sidebar');
+  const button=el('sidebarToggleBtn');
+  if(!sidebar || !button) return;
+
+  const next=Boolean(collapsed);
+  sidebar.classList.toggle('collapsed',next);
+  button.setAttribute('aria-expanded',String(!next));
+  const label=next?'Zijbalk uitklappen':'Zijbalk inklappen';
+  button.setAttribute('aria-label',label);
+  button.title=label;
+
+  if(persist){
+    try{ localStorage.setItem(SIDEBAR_STORAGE_KEY,String(next)); }
+    catch(error){ console.warn('Zijbalkvoorkeur kon niet worden opgeslagen:',error.message); }
+  }
+}
+function initSidebar(){
+  let collapsed=false;
+  try{ collapsed=localStorage.getItem(SIDEBAR_STORAGE_KEY)==='true'; }
+  catch(error){ console.warn('Zijbalkvoorkeur kon niet worden gelezen:',error.message); }
+
+  setSidebarCollapsed(collapsed,{persist:false});
+  document.querySelectorAll('.nav').forEach(button=>{
+    button.title=button.dataset.title || button.textContent.trim();
+  });
+  el('sidebarToggleBtn')?.addEventListener('click',()=>{
+    const sidebar=document.querySelector('.sidebar');
+    setSidebarCollapsed(!sidebar?.classList.contains('collapsed'));
+  });
+}
+
 function setPage(pageId, title){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   el(pageId).classList.add('active');
@@ -2633,7 +2666,14 @@ function updateCalculatedNoticeDate(){
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{ selectedPropertyId=null; setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim()); }));
+  initSidebar();
+  document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
+    selectedPropertyId=null;
+    setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
+    if(window.matchMedia('(max-width: 900px)').matches){
+      setSidebarCollapsed(true,{persist:false});
+    }
+  }));
   document.body.addEventListener('click', e=>{
     const detail=e.target.closest('.detailBtn');
     const edit=e.target.closest('.editBtn');

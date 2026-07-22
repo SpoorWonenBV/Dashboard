@@ -624,3 +624,158 @@
   .financialTab{flex:1;padding:10px 8px}
   .serviceYearFilter{margin-top:14px;max-width:220px}
 }
+
+/* v34: inklapbare zijbalk en groter, gecentreerd bedrijfslogo */
+.sidebar{
+  position:sticky;
+  overflow:visible;
+  transition:width .22s ease,flex-basis .22s ease,padding .22s ease;
+}
+.sidebarToggleBtn{
+  position:absolute;
+  top:24px;
+  right:-16px;
+  z-index:5;
+  width:34px;
+  height:34px;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid #d5dce6;
+  border-radius:50%;
+  background:#fff;
+  color:#172033;
+  box-shadow:0 6px 18px rgba(15,23,42,.18);
+  transition:transform .22s ease,background .18s ease;
+}
+.sidebarToggleBtn:hover{background:#f1f5f9}
+.sidebarToggleIcon,
+.sidebarToggleIcon svg{
+  display:block;
+  width:19px;
+  height:19px;
+}
+.sidebarToggleIcon svg{
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.brandBlock{
+  align-items:center;
+  text-align:center;
+}
+.brandLogoArea{
+  min-height:104px;
+  max-height:116px;
+  justify-content:center;
+}
+.sidebarLogo{
+  max-width:230px;
+  max-height:110px;
+  object-position:center center;
+}
+.brandText{align-items:center;text-align:center}
+.brandText strong,.brandText span{text-align:center}
+
+.sidebar.collapsed{
+  width:88px;
+  flex-basis:88px;
+  padding:24px 12px 20px;
+}
+.sidebar.collapsed .sidebarToggleIcon{transform:rotate(180deg)}
+.sidebar.collapsed .brandBlock{
+  width:100%;
+  margin-bottom:24px;
+  gap:0;
+}
+.sidebar.collapsed .brandLogoArea{
+  width:100%;
+  min-height:68px;
+  max-height:74px;
+  justify-content:center;
+}
+.sidebar.collapsed .sidebarLogo{
+  max-width:62px;
+  max-height:68px;
+  object-position:center center;
+}
+.sidebar.collapsed .brandText{display:none}
+.sidebar.collapsed .nav,
+.sidebar.collapsed .logoutBtn{
+  justify-content:center;
+  gap:0;
+  padding-left:0;
+  padding-right:0;
+}
+.sidebar.collapsed .navLabel{display:none}
+.sidebar.collapsed .navIcon,
+.sidebar.collapsed .navIcon svg{
+  width:24px;
+  height:24px;
+  flex-basis:24px;
+}
+.sidebar.collapsed .settingsNav{
+  border-radius:12px;
+  border-top:1px solid rgba(255,255,255,.12);
+}
+
+@media(max-width:900px){
+  .sidebar{
+    position:relative;
+    width:100%;
+    padding:20px 18px;
+  }
+  .sidebarToggleBtn{
+    top:20px;
+    right:18px;
+  }
+  .brandBlock{
+    align-items:center;
+    text-align:center;
+    padding-right:48px;
+    padding-left:48px;
+  }
+  .brandLogoArea{
+    min-height:96px;
+    max-height:108px;
+    justify-content:center;
+  }
+  .sidebarLogo{
+    max-width:230px;
+    max-height:102px;
+  }
+  .brandText{align-items:center}
+  .sidebar.collapsed{
+    width:100%;
+    padding:18px;
+    display:block;
+  }
+  .sidebar.collapsed .brandBlock{
+    display:flex;
+    margin:0;
+    padding:0 48px;
+  }
+  .sidebar.collapsed .brandLogoArea{
+    min-height:74px;
+    max-height:84px;
+  }
+  .sidebar.collapsed .sidebarLogo{
+    max-width:190px;
+    max-height:78px;
+  }
+  .sidebar.collapsed .brandText{display:flex}
+  .sidebar.collapsed .nav,
+  .sidebar.collapsed .logoutBtn{display:none}
+}
+
+@media(max-width:520px){
+  .sidebarToggleBtn{right:14px}
+  .brandBlock{padding-right:42px;padding-left:42px}
+  .brandLogoArea{min-height:82px;max-height:94px}
+  .sidebarLogo{max-width:190px;max-height:88px}
+  .sidebar.collapsed .brandBlock{padding:0 42px}
+  .sidebar.collapsed .sidebarLogo{max-width:165px;max-height:72px}
+}
