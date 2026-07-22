@@ -43,7 +43,109 @@ let branding={...DEFAULT_BRANDING};
 const brandingSignedUrlCache={};
 function validHex(value,fallback){return /^#[0-9a-f]{6}$/i.test(String(value||''))?value:fallback;}
 
-function setImage(id,url){
+const transparentLogoCache={};
+
+function colorDistance(a,b){
+  const dr=a[0]-b[0], dg=a[1]-b[1], db=a[2]-b[2];
+  return Math.sqrt(dr*dr+dg*dg+db*db);
+}
+
+async function removeUniformLogoBackground(url){
+  if(!url) return '';
+  if(transparentLogoCache[url]) return transparentLogoCache[url];
+
+  try{
+    const response=await fetch(url,{mode:'cors',credentials:'omit'});
+    if(!response.ok) throw new Error(`Logo ophalen mislukt (${response.status})`);
+    const blob=await response.blob();
+    const bitmap=await createImageBitmap(blob);
+
+    const maxSide=1600;
+    const scale=Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
+    const width=Math.max(1,Math.round(bitmap.width*scale));
+    const height=Math.max(1,Math.round(bitmap.height*scale));
+    const canvas=document.createElement('canvas');
+    canvas.width=width;
+    canvas.height=height;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(bitmap,0,0,width,height);
+    if(bitmap.close) bitmap.close();
+
+    const image=ctx.getImageData(0,0,width,height);
+    const data=image.data;
+    const pixel=(x,y)=>{
+      const i=(y*width+x)*4;
+      return [data[i],data[i+1],data[i+2],data[i+3]];
+    };
+    const corners=[
+      pixel(0,0),pixel(width-1,0),pixel(0,height-1),pixel(width-1,height-1),
+      pixel(Math.min(2,width-1),Math.min(2,height-1)),
+      pixel(Math.max(0,width-3),Math.min(2,height-1)),
+      pixel(Math.min(2,width-1),Math.max(0,height-3)),
+      pixel(Math.max(0,width-3),Math.max(0,height-3))
+    ];
+
+    // Een echt transparante PNG hoeft niet bewerkt te worden.
+    if(corners.filter(c=>c[3]<32).length>=4){
+      transparentLogoCache[url]=url;
+      return url;
+    }
+
+    const opaque=corners.filter(c=>c[3]>220);
+    if(opaque.length<4){
+      transparentLogoCache[url]=url;
+      return url;
+    }
+    const base=[0,0,0,255];
+    for(let c=0;c<3;c++) base[c]=Math.round(opaque.reduce((sum,p)=>sum+p[c],0)/opaque.length);
+
+    // Alleen een vrijwel egale achtergrond wordt weggehaald.
+    const cornerSpread=Math.max(...opaque.map(c=>colorDistance(c,base)));
+    if(cornerSpread>45){
+      transparentLogoCache[url]=url;
+      return url;
+    }
+
+    const visited=new Uint8Array(width*height);
+    const queue=new Int32Array(width*height);
+    let head=0,tail=0;
+    const add=(x,y)=>{
+      if(x<0||y<0||x>=width||y>=height) return;
+      const idx=y*width+x;
+      if(visited[idx]) return;
+      const i=idx*4;
+      const current=[data[i],data[i+1],data[i+2],data[i+3]];
+      if(current[3]===0 || colorDistance(current,base)<=82){
+        visited[idx]=1;
+        queue[tail++]=idx;
+      }
+    };
+
+    for(let x=0;x<width;x++){add(x,0);add(x,height-1);}
+    for(let y=0;y<height;y++){add(0,y);add(width-1,y);}
+
+    while(head<tail){
+      const idx=queue[head++];
+      const x=idx%width;
+      const y=(idx/width)|0;
+      const i=idx*4;
+      const distance=colorDistance([data[i],data[i+1],data[i+2],data[i+3]],base);
+      data[i+3]=distance<=40?0:Math.min(data[i+3],Math.round(((distance-40)/42)*255));
+      add(x-1,y);add(x+1,y);add(x,y-1);add(x,y+1);
+    }
+
+    ctx.putImageData(image,0,0);
+    const result=canvas.toDataURL('image/png');
+    transparentLogoCache[url]=result;
+    return result;
+  }catch(error){
+    console.warn('Logo-achtergrond kon niet automatisch worden verwijderd:',error.message);
+    transparentLogoCache[url]=url;
+    return url;
+  }
+}
+
+async function setImage(id,url,{cleanBackground=false}={}){
   const node=el(id);
   if(!node) return;
   const area=id==='sidebarLogo' ? el('sidebarLogoArea') : null;
@@ -53,13 +155,15 @@ function setImage(id,url){
     if(area) area.classList.add('hidden');
   };
   node.onerror=hideImage;
-  if(url){
-    node.src=url;
-    node.classList.remove('hidden');
-    if(area) area.classList.remove('hidden');
-  }else{
+  if(!url){
     hideImage();
+    return;
   }
+
+  const finalUrl=cleanBackground ? await removeUniformLogoBackground(url) : url;
+  node.src=finalUrl;
+  node.classList.remove('hidden');
+  if(area) area.classList.remove('hidden');
 }
 
 function brandingStoragePath(value){
@@ -121,8 +225,10 @@ async function applyBranding(next={}){
   ]);
 
   // Het logo wordt bewust alleen in het ingelogde dashboard getoond.
-  setImage('sidebarLogo',logoUrl);
-  setImage('previewLogo',logoUrl);
+  await Promise.all([
+    setImage('sidebarLogo',logoUrl,{cleanBackground:true}),
+    setImage('previewLogo',logoUrl,{cleanBackground:true})
+  ]);
   const fav=el('faviconLink');
   if(fav) fav.href=faviconUrl||'data:,';
 
