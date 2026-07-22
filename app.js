@@ -422,7 +422,7 @@ function createRentLetterHtml(data){
   const effectiveLong=new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${data.effective_date}T00:00:00Z`));
   const oldPeriod=longMonthYear(`${data.old_period}-01`);
   const newPeriod=longMonthYear(`${data.new_period}-01`);
-  return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><title>Concept huurverhoging ${escHtml(r.object)}</title><style>
+  return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><title>Concept huurverhoging ${escHtml(r.object)}</title><style>
     body{font-family:Arial,sans-serif;color:#111;max-width:760px;margin:40px auto;padding:0 28px;line-height:1.55}h1{font-size:22px;margin:0 0 4px}.muted{color:#555}.box{background:#f5f7fa;border:1px solid #d9e0e8;padding:16px;margin:22px 0}.row{display:flex;justify-content:space-between;gap:20px;padding:5px 0}.notice{padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;margin-bottom:22px}.print{margin-bottom:20px;padding:10px 14px;background:#172033;color:white;border:0;border-radius:8px;cursor:pointer}@media print{.print,.notice{display:none}body{margin:0;max-width:none}}</style></head><body>
     <button class="print" onclick="window.print()">Afdrukken / opslaan als PDF</button>
     <div class="notice"><strong>Concept:</strong> controleer de berekening en brieftekst. Deze brief is niet automatisch verzonden.</div>
@@ -449,11 +449,21 @@ function createRentLetterHtml(data){
 function openRentConceptLetter(){
   try{
     const data=proposalLetterData();
-    const popup=window.open('','_blank');
-    if(!popup) throw new Error('De browser blokkeert het nieuwe venster. Sta pop-ups toe voor dit dashboard.');
-    popup.document.open();
-    popup.document.write(createRentLetterHtml(data));
-    popup.document.close();
+    const html=createRentLetterHtml(data);
+    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    const blobUrl=URL.createObjectURL(blob);
+
+    // Open eerst een leeg venster vanuit de gebruikersactie en verbreek daarna
+    // direct de koppeling met het dashboard. De brief wordt vervolgens als
+    // lokaal Blob-document geladen en maakt geen externe netwerkverbindingen.
+    const popup=window.open('about:blank','_blank');
+    if(!popup){
+      URL.revokeObjectURL(blobUrl);
+      throw new Error('De browser blokkeert het nieuwe venster. Sta pop-ups toe voor dit dashboard.');
+    }
+    popup.opener=null;
+    popup.location.replace(blobUrl);
+    window.setTimeout(()=>URL.revokeObjectURL(blobUrl),60_000);
   }catch(error){
     el('rentIncreaseMessage').textContent='Conceptbrief kan niet worden gemaakt: '+error.message;
   }
