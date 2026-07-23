@@ -161,8 +161,8 @@ async function initPwa(){
     return;
   }
   try{
-    pwaRegistration=await navigator.serviceWorker.register('/service-worker.js',{scope:'/',updateViaCache:'none'});
-    await pwaRegistration.update();
+    const serviceWorkerUrl=new URL('/service-worker.js',window.location.origin).href;
+    pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     if(pwaRegistration.waiting) showPwaUpdate();
     pwaRegistration.addEventListener('updatefound',()=>{
       const worker=pwaRegistration.installing;

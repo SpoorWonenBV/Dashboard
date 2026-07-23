@@ -1,23 +1,31 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v38-1';
+const CACHE_NAME='vastgoed-dashboard-static-v38-2';
 const OFFLINE_URL='/offline.html';
 const STATIC_ASSETS=[
   '/style.css',
   '/app.js',
   '/manifest.webmanifest',
   OFFLINE_URL,
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-512.png',
-  '/icons/apple-touch-icon.png'
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-512.png',
+  '/apple-touch-icon.png'
 ];
 
 self.addEventListener('install',event=>{
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache=>cache.addAll(STATIC_ASSETS))
-  );
+  event.waitUntil((async()=>{
+    const cache=await caches.open(CACHE_NAME);
+    await Promise.all(STATIC_ASSETS.map(async asset=>{
+      try{
+        const response=await fetch(asset,{cache:'no-store'});
+        if(response.ok) await cache.put(asset,response);
+      }catch(error){
+        console.warn('PWA-bestand kon niet vooraf worden opgeslagen:',asset,error);
+      }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate',event=>{
