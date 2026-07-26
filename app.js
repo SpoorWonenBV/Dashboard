@@ -52,10 +52,11 @@ const escAttr = value => String(value || '').replace(/&/g,'&amp;').replace(/"/g,
 const escHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 
 
-/* v38: veilige PWA-installatie voor telefoon en desktop */
+/* v38.4: robuuste PWA-installatie voor telefoon en desktop */
 let deferredInstallPrompt=null;
 let pwaRegistration=null;
 let pwaRefreshing=false;
+let pwaPromptTimer=null;
 
 function isPwaStandalone(){
   return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone===true;
@@ -66,6 +67,9 @@ function isIosDevice(){
 function isSafariBrowser(){
   const ua=navigator.userAgent||'';
   return /safari/i.test(ua) && !/chrome|crios|android|edg|opr|fxios/i.test(ua);
+}
+function isChromiumBrowser(){
+  return /chrome|crios|edg|opr/i.test(navigator.userAgent||'') && !/firefox|fxios/i.test(navigator.userAgent||'');
 }
 function setPwaHelp(html=''){
   const help=el('pwaInstallHelp');
@@ -81,12 +85,16 @@ function setPwaStatus(label,style,title,text,{canInstall=false}={}){
   }
   if(el('pwaStatusTitle')) el('pwaStatusTitle').textContent=title;
   if(el('pwaStatusText')) el('pwaStatusText').textContent=text;
+
   const headerButton=el('installAppBtn');
   const settingsButton=el('settingsInstallAppBtn');
   headerButton?.classList.toggle('hidden',!canInstall);
+
   if(settingsButton){
-    settingsButton.classList.toggle('hidden',isPwaStandalone());
-    settingsButton.disabled=!canInstall && !isIosDevice();
+    const standalone=isPwaStandalone();
+    settingsButton.classList.toggle('hidden',standalone);
+    settingsButton.disabled=false;
+    settingsButton.textContent=canInstall ? 'App installeren' : 'Installatiehulp';
   }
 }
 function updatePwaInstallUi(){
@@ -97,15 +105,43 @@ function updatePwaInstallUi(){
   }
   if(deferredInstallPrompt){
     setPwaHelp('');
-    setPwaStatus('Klaar','ok','De app kan worden geïnstalleerd','Installeer het dashboard op dit apparaat voor een eigen appvenster en snelkoppeling.',{canInstall:true});
+    setPwaStatus('Klaar','ok','De app kan worden geïnstalleerd','Klik op “App installeren” om het installatievenster te openen.',{canInstall:true});
     return;
   }
   if(isIosDevice()){
     setPwaStatus('Handmatig','warning','Installeren via het deelmenu','Open deze pagina in Safari en gebruik het deelmenu om de app op het beginscherm te zetten.',{canInstall:true});
     return;
   }
-  setPwaStatus('Browsermenu','warning','Installatie via de browser','Gebruik het installatiesymbool in de adresbalk of kies “App installeren” in het browsermenu. Zodra de browser een directe installatie aanbiedt, verschijnt de knop automatisch.');
+
+  const waitingText=isChromiumBrowser()
+    ? 'Klik één keer op de pagina en laat het dashboard ongeveer 30 seconden open. Zodra de browser de app vrijgeeft, verandert de knop automatisch in “App installeren”.'
+    : 'Gebruik het installatiesymbool in de adresbalk of kies “App installeren” in het browsermenu.';
+  setPwaStatus('Controleren','warning','De browser controleert de installatie',waitingText);
 }
+function capturePwaInstallPrompt(event){
+  event.preventDefault();
+  deferredInstallPrompt=event;
+  if(pwaPromptTimer){
+    clearTimeout(pwaPromptTimer);
+    pwaPromptTimer=null;
+  }
+  updatePwaInstallUi();
+}
+function handlePwaInstalled(){
+  deferredInstallPrompt=null;
+  setPwaHelp('');
+  updatePwaInstallUi();
+}
+
+/*
+ * Deze listeners worden direct tijdens het laden van app.js geregistreerd.
+ * Daardoor missen we beforeinstallprompt niet wanneer er al een actieve
+ * service worker aanwezig is en de browser vroeg beslist dat de app
+ * installeerbaar is.
+ */
+window.addEventListener('beforeinstallprompt',capturePwaInstallPrompt);
+window.addEventListener('appinstalled',handlePwaInstalled);
+
 async function requestPwaInstall(){
   if(isPwaStandalone()){
     updatePwaInstallUi();
@@ -114,8 +150,16 @@ async function requestPwaInstall(){
   if(deferredInstallPrompt){
     const promptEvent=deferredInstallPrompt;
     deferredInstallPrompt=null;
-    await promptEvent.prompt();
-    try{ await promptEvent.userChoice; }catch(error){ console.warn('Installatiekeuze kon niet worden gelezen:',error.message); }
+    try{
+      await promptEvent.prompt();
+      const choice=await promptEvent.userChoice;
+      if(choice?.outcome==='dismissed'){
+        setPwaHelp('<strong>Installatie geannuleerd</strong><p>Je kunt het later opnieuw proberen via het installatiesymbool in de adresbalk of het browsermenu.</p>');
+      }
+    }catch(error){
+      console.warn('Installatievenster kon niet worden geopend:',error);
+      setPwaHelp(`<strong>Installatievenster kon niet worden geopend</strong><p>${escHtml(error.message||'Probeer het via het browsermenu.')}</p>`);
+    }
     updatePwaInstallUi();
     return;
   }
@@ -124,7 +168,14 @@ async function requestPwaInstall(){
     setPwaHelp(`<strong>Installeren op iPhone of iPad</strong><ol><li>${safariNote}Tik onderin op het deel-symbool.</li><li>Kies <strong>Zet op beginscherm</strong>.</li><li>Bevestig met <strong>Voeg toe</strong>.</li></ol>`);
     return;
   }
-  setPwaHelp('<strong>Installeren op computer of Android</strong><p>Kies het installatiesymbool in de adresbalk. Staat dit er niet, open dan het browsermenu en kies <strong>App installeren</strong> of <strong>Toevoegen aan startscherm</strong>.</p>');
+
+  setPwaHelp(
+    '<strong>Installatie nog niet vrijgegeven</strong>'+
+    '<ol><li>Klik één keer ergens in het dashboard.</li>'+
+    '<li>Laat deze pagina minimaal 30 seconden open.</li>'+
+    '<li>Ververs daarna één keer met <strong>Ctrl + F5</strong>.</li>'+
+    '<li>Klik opnieuw op deze knop of gebruik het installatiesymbool in de adresbalk.</li></ol>'
+  );
 }
 function showPwaUpdate(){
   el('pwaReloadBtn')?.classList.remove('hidden');
@@ -139,16 +190,6 @@ function activatePwaUpdate(){
   }
 }
 async function initPwa(){
-  window.addEventListener('beforeinstallprompt',event=>{
-    event.preventDefault();
-    deferredInstallPrompt=event;
-    updatePwaInstallUi();
-  });
-  window.addEventListener('appinstalled',()=>{
-    deferredInstallPrompt=null;
-    setPwaHelp('');
-    updatePwaInstallUi();
-  });
   window.matchMedia?.('(display-mode: standalone)').addEventListener?.('change',updatePwaInstallUi);
   updatePwaInstallUi();
 
@@ -161,8 +202,10 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=38.4',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
+    await pwaRegistration.update();
+
     if(pwaRegistration.waiting) showPwaUpdate();
     pwaRegistration.addEventListener('updatefound',()=>{
       const worker=pwaRegistration.installing;
@@ -176,6 +219,10 @@ async function initPwa(){
       pwaRefreshing=true;
       window.location.reload();
     });
+
+    if(!deferredInstallPrompt && !isPwaStandalone()){
+      pwaPromptTimer=setTimeout(updatePwaInstallUi,31_000);
+    }
   }catch(error){
     console.error('PWA-serviceworker kon niet worden geregistreerd:',error);
     setPwaStatus('Niet actief','danger','App-installatie is nog niet actief',`Controleer de deployment van service-worker.js: ${error.message}`);

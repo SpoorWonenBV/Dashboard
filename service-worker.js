@@ -1,29 +1,29 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v38-3';
+const CACHE_NAME='vastgoed-dashboard-static-v38-4';
 const OFFLINE_URL='/offline.html';
-const STATIC_ASSETS=[
+const STATIC_PATHS=new Set([
   '/style.css',
   '/app.js',
-  '/manifest.webmanifest?v=38.3',
+  '/app-v38-4.webmanifest',
   OFFLINE_URL,
   '/sw-app-icon-192-v2.png',
   '/sw-app-icon-512-v2.png',
   '/sw-app-icon-maskable-512-v2.png',
   '/sw-apple-touch-icon-v2.png'
-];
+]);
 
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(CACHE_NAME);
-    await Promise.all(STATIC_ASSETS.map(async asset=>{
+    for(const path of STATIC_PATHS){
       try{
-        const response=await fetch(asset,{cache:'no-store'});
-        if(response.ok) await cache.put(asset,response);
+        const response=await fetch(path,{cache:'no-store'});
+        if(response.ok) await cache.put(path,response);
       }catch(error){
-        console.warn('PWA-bestand kon niet vooraf worden opgeslagen:',asset,error);
+        console.warn('PWA-bestand kon niet vooraf worden opgeslagen:',path,error);
       }
-    }));
+    }
     await self.skipWaiting();
   })());
 });
@@ -46,8 +46,7 @@ self.addEventListener('fetch',event=>{
 
   const url=new URL(request.url);
 
-  // Externe diensten en API-verzoeken worden nooit door deze service worker
-  // opgeslagen of onderschept. Dit geldt dus ook voor Supabase en CBS.
+  // Supabase, CBS en andere externe API's worden nooit onderschept of gecachet.
   if(url.origin!==self.location.origin) return;
 
   if(request.mode==='navigate'){
@@ -61,15 +60,16 @@ self.addEventListener('fetch',event=>{
     return;
   }
 
-  if(!STATIC_ASSETS.includes(url.pathname)) return;
+  if(!STATIC_PATHS.has(url.pathname)) return;
 
   event.respondWith((async()=>{
-    const cached=await caches.match(request,{ignoreSearch:true});
+    const cached=await caches.match(url.pathname);
     if(cached) return cached;
-    const response=await fetch(request);
+
+    const response=await fetch(request,{cache:'no-store'});
     if(response.ok){
       const cache=await caches.open(CACHE_NAME);
-      await cache.put(request,response.clone());
+      await cache.put(url.pathname,response.clone());
     }
     return response;
   })());
