@@ -1163,3 +1163,57 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
 .rememberLoginRow{display:flex;align-items:flex-start;gap:9px;margin:12px 0 6px;color:#334155;font-size:13px;font-weight:700;line-height:1.4;cursor:pointer}
 .rememberLoginRow input{width:18px!important;height:18px;margin:1px 0 0!important;flex:0 0 18px;accent-color:var(--brand-primary)}
 .loginSecurityHint{margin:0 0 14px!important;color:#64748b!important;font-size:12px;line-height:1.45}
+
+
+/* v40: apart overzicht voor keuringen */
+.inspectionIntro{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.inspectionIntro h2{margin:0 0 6px}
+.inspectionIntro p{margin:0;color:#64748b;line-height:1.5}
+.inspectionIntro button{margin:0;white-space:nowrap}
+.inspectionSummaryCards{grid-template-columns:repeat(auto-fit,minmax(175px,1fr))}
+.inspectionFilters{display:grid;grid-template-columns:repeat(3,minmax(180px,320px));gap:12px;margin:0 0 16px}
+.inspectionFilters select{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d5dce6;border-radius:12px;background:#fff;font:inherit;color:#172033}
+.inspectionTablePanel{padding:0;overflow:hidden}
+.inspectionTableWrap{width:100%;overflow-x:auto}
+#inspectionTable{min-width:1240px}
+#inspectionTable td{vertical-align:top}
+#inspectionTable td:first-child{min-width:190px}
+.dangerTextBtn{color:#991b1b;border-color:#fecaca}
+.agendaEvent.inspection{border-left-color:#7c3aed;background:#f5f3ff;color:#5b21b6}
+.agendaListItem.inspection{border-left-color:#7c3aed}
+@media(max-width:900px){
+  .inspectionIntro{display:block}
+  .inspectionIntro button{margin-top:14px}
+  .inspectionFilters{grid-template-columns:1fr}
+}
+
+
+/* v40.1: Keuringen als subtab binnen Onderhoud */
+.maintenanceTabs{
+  display:flex;
+  gap:8px;
+  margin:0 0 18px;
+  padding:6px;
+  width:max-content;
+  max-width:100%;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+.maintenanceTab{
+  background:transparent;
+  color:#475569;
+  padding:10px 16px;
+  border-radius:10px;
+}
+.maintenanceTab.active{
+  background:#172033;
+  color:#fff;
+}
+.maintenanceSubPage{display:none}
+.maintenanceSubPage.active{display:block}
+@media(max-width:700px){
+  .maintenanceTabs{width:100%}
+  .maintenanceTab{flex:1;padding:10px 8px}
+}

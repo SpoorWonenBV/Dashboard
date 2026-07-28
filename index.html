@@ -159,9 +159,20 @@
       </section>
 
       <section id="onderhoud" class="page">
-        <p id="maintenanceImportMessage" class="formMessage maintenanceImportMessage"></p>
-        <div id="maintenanceImportResults"></div>
-        <div id="maintenanceOverview"></div>
+        <div class="maintenanceTabs" role="tablist" aria-label="Onderhoudsonderdelen">
+          <button class="maintenanceTab active" type="button" data-maintenance-tab="maintenance" role="tab" aria-selected="true">Onderhoud</button>
+          <button class="maintenanceTab" type="button" data-maintenance-tab="inspections" role="tab" aria-selected="false">Keuringen</button>
+        </div>
+
+        <div id="maintenanceMainPanel" class="maintenanceSubPage active">
+          <p id="maintenanceImportMessage" class="formMessage maintenanceImportMessage"></p>
+          <div id="maintenanceImportResults"></div>
+          <div id="maintenanceOverview"></div>
+        </div>
+
+        <div id="maintenanceInspectionPanel" class="maintenanceSubPage">
+          <div id="inspectionOverview"></div>
+        </div>
       </section>
 
       <section id="financieel" class="page">
@@ -550,6 +561,59 @@
         </div>
       </form>
       <p id="maintenanceEditMessage" class="formMessage"></p>
+    </div>
+  </div>
+
+  <div id="inspectionModal" class="modal hidden">
+    <div class="modalCard largeModal">
+      <div class="modalHeader">
+        <div>
+          <h2 id="inspectionModalTitle">Keuring toevoegen</h2>
+          <p class="meta">Registreer de geldigheid, uitvoerder en het keuringsdocument.</p>
+        </div>
+        <button id="closeInspectionModalBtn" class="iconBtn" type="button">×</button>
+      </div>
+      <form id="inspectionForm">
+        <input type="hidden" id="inspectionId">
+        <div class="formGrid">
+          <label>Object<select id="inspectionPropertyId" required></select></label>
+          <label>Type keuring
+            <select id="inspectionType" required>
+              <option>SCOPE 10</option>
+              <option>SCOPE 12</option>
+              <option>Energielabel</option>
+              <option>NEN 3140</option>
+              <option>Brandveiligheidskeuring</option>
+              <option>Liftkeuring</option>
+              <option>Legionellacontrole</option>
+              <option>Overig</option>
+            </select>
+          </label>
+          <label>Laatste keuringsdatum<input id="inspectionDate" type="date"></label>
+          <label>Geldig tot<input id="inspectionValidUntil" type="date"></label>
+          <label>Volgende keuring<input id="inspectionNextDate" type="date"></label>
+          <label>Status
+            <select id="inspectionStatus">
+              <option>Nog te plannen</option>
+              <option>Ingepland</option>
+              <option>In behandeling</option>
+              <option>Geldig</option>
+              <option>Afgekeurd</option>
+              <option>Niet van toepassing</option>
+            </select>
+          </label>
+          <label>Keuringsbedrijf<input id="inspectionCompany" maxlength="160"></label>
+          <label>Certificaatnummer<input id="inspectionCertificate" maxlength="120"></label>
+          <label>Kosten<input id="inspectionCost" type="number" min="0" step="0.01"></label>
+          <label>Rapport of certificaat<input id="inspectionDocument" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span id="inspectionCurrentDocument" class="subtle">Nog geen document gekoppeld</span></label>
+        </div>
+        <label>Opmerkingen<textarea id="inspectionNotes" rows="4"></textarea></label>
+        <div class="formActions">
+          <button type="button" class="secondaryBtn" id="closeInspectionFormBtn">Annuleren</button>
+          <button type="submit">Keuring opslaan</button>
+        </div>
+      </form>
+      <p id="inspectionMessage" class="formMessage"></p>
     </div>
   </div>
 

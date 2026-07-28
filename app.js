@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], selectedPropertyId = null;
+let sb, query = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
   if(!s) return '-';
@@ -372,7 +372,10 @@ let rawRentIncreaseProposals=[];
 let rentIncreaseSetupReady=true;
 let rawServiceCostSettlements=[];
 let serviceCostSetupReady=true;
+let inspectionsSetupReady=true;
+let activeInspectionId=null;
 let activeFinancialTab='rent';
+let activeMaintenanceTab='maintenance';
 let serviceCostYear=new Date().getFullYear()-1;
 let activeServiceCostContext=null;
 const DEFAULT_NOTIFICATION_RULES={
@@ -2099,6 +2102,28 @@ function initSidebar(){
   });
 }
 
+function setMaintenanceTab(tab){
+  activeMaintenanceTab=tab==='inspections'?'inspections':'maintenance';
+
+  document.querySelectorAll('.maintenanceTab').forEach(button=>{
+    const active=button.dataset.maintenanceTab===activeMaintenanceTab;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-selected',String(active));
+  });
+
+  el('maintenanceMainPanel')?.classList.toggle('active',activeMaintenanceTab==='maintenance');
+  el('maintenanceInspectionPanel')?.classList.toggle('active',activeMaintenanceTab==='inspections');
+
+  const maintenanceCsvButton=el('chooseMaintenanceCsvBtn');
+  if(maintenanceCsvButton){
+    const maintenancePageActive=el('onderhoud')?.classList.contains('active');
+    maintenanceCsvButton.classList.toggle('hidden',!maintenancePageActive||activeMaintenanceTab!=='maintenance');
+  }
+
+  if(activeMaintenanceTab==='inspections') renderInspections(filtered());
+  else renderMaintenanceOverview(filtered());
+}
+
 function setPage(pageId, title){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   el(pageId).classList.add('active');
@@ -2106,10 +2131,14 @@ function setPage(pageId, title){
   el('pageTitle').textContent=title || pageId;
 
   const maintenanceCsvButton=el('chooseMaintenanceCsvBtn');
-  if(maintenanceCsvButton) maintenanceCsvButton.classList.toggle('hidden', pageId!=='onderhoud');
+  if(maintenanceCsvButton) maintenanceCsvButton.classList.toggle('hidden', pageId!=='onderhoud'||activeMaintenanceTab!=='maintenance');
 
   const objectCsvButton=el('chooseObjectCsvBtn');
   if(objectCsvButton) objectCsvButton.classList.toggle('hidden', pageId!=='objecten');
+
+  if(pageId==='onderhoud'){
+    setMaintenanceTab(activeMaintenanceTab);
+  }
 
   if(pageId==='financieel'){
     renderFinancialPage(filtered());
@@ -2183,7 +2212,7 @@ async function checkSession(){
 }
 async function loadData(){
   try{
-    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl]=await Promise.all([
+    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir]=await Promise.all([
       sb.from('properties').select('*').order('created_at',{ascending:false}),
       sb.from('contracts').select('*'),
       sb.from('tenants').select('*'),
@@ -2193,7 +2222,8 @@ async function loadData(){
       sb.from('rent_increase_proposals').select('*').order('effective_date',{ascending:true}),
       sb.from('service_cost_settlements').select('*').order('settlement_year',{ascending:false}),
       sb.from('notification_settings').select('*').eq('id',1).maybeSingle(),
-      sb.from('email_notification_log').select('*').order('created_at',{ascending:false}).limit(20)
+      sb.from('email_notification_log').select('*').order('created_at',{ascending:false}).limit(20),
+      sb.from('property_inspections').select('*').order('valid_until',{ascending:true})
     ]);
     [pr,cr,tr,mr,dr,hr].forEach(r=>{if(r.error) throw r.error});
     rawProperties=pr.data||[]; rawContracts=cr.data||[]; rawTenants=tr.data||[]; rawMaintenance=mr.data||[]; rawDocuments=dr.data||[]; rawMaintenanceHistory=hr.data||[];
@@ -2226,6 +2256,14 @@ async function loadData(){
       rawEmailNotificationLogs=[];
     }else{
       rawEmailNotificationLogs=nl.data||[];
+    }
+    if(ir.error){
+      console.warn('Keuringentabel nog niet beschikbaar:',ir.error.message);
+      rawInspections=[];
+      inspectionsSetupReady=false;
+    }else{
+      rawInspections=ir.data||[];
+      inspectionsSetupReady=true;
     }
     vastgoedData=normalize(rawProperties, rawContracts, rawTenants, rawMaintenance, rawDocuments, rawMaintenanceHistory);
     el('statusText').textContent=`Live data uit Supabase. Laatst geladen: ${new Date().toLocaleTimeString('nl-NL')}`;
@@ -2305,6 +2343,22 @@ function notificationItems(data){
     if(rentIncreaseDays!==null){
       if(rentIncreaseDays<=30) items.push(actionItem('danger','Huurverhoging',`Huurverhoging deze maand: ${r.object}`,`Maand huurverhoging: ${r.maand_huurverhoging}.`,r.id));
       else if(rentIncreaseDays<=60) items.push(actionItem('warning','Huurverhoging',`Huurverhoging binnen 60 dagen`,`${r.object}: maand ${r.maand_huurverhoging}.`,r.id));
+    }
+  });
+  const allowedIds=new Set(data.map(item=>item.id));
+  rawInspections.filter(row=>allowedIds.has(row.property_id)).forEach(row=>{
+    const property=inspectionProperty(row);
+    const status=inspectionDisplayStatus(row);
+    const date=inspectionDeadline(row);
+    const days=daysUntil(date);
+    if(status==='Afgekeurd'){
+      items.push(actionItem('danger','Keuring',`${row.inspection_type} afgekeurd: ${property?.object||'Onbekend object'}`,'Plan herstel en een eventuele herkeuring.',row.property_id));
+    }else if(status==='Verlopen'){
+      items.push(actionItem('danger','Keuring',`${row.inspection_type} verlopen: ${property?.object||'Onbekend object'}`,`Vervaldatum: ${dateFmt(date)}.`,row.property_id));
+    }else if(status==='Verloopt binnenkort'&&days!==null){
+      items.push(actionItem(days<=30?'danger':'warning','Keuring',`${row.inspection_type} verloopt binnen ${days} dagen`,`${property?.object||'Onbekend object'}: ${dateFmt(date)}.`,row.property_id));
+    }else if(status==='Nog te plannen'){
+      items.push(actionItem('warning','Keuring',`${row.inspection_type} nog te plannen: ${property?.object||'Onbekend object'}`,'Vul een keuringsdatum of volgende keuringsdatum in.',row.property_id));
     }
   });
   const score={danger:0,warning:1,ok:2};
@@ -3195,6 +3249,206 @@ function renewalText(r){
   if(!r.verlenging_jaren) return 'Geen automatische verlenging';
   return `${r.verlenging_jaren} ${r.verlenging_jaren===1?'jaar':'jaar'}`;
 }
+
+const INSPECTION_TYPES=['SCOPE 10','SCOPE 12','Energielabel','NEN 3140','Brandveiligheidskeuring','Liftkeuring','Legionellacontrole','Overig'];
+const INSPECTION_STATUSES=['Nog te plannen','Ingepland','In behandeling','Geldig','Afgekeurd','Niet van toepassing'];
+
+function inspectionProperty(row){
+  return vastgoedData.find(item=>item.id===row.property_id)||null;
+}
+function inspectionDeadline(row){
+  return row.next_inspection_date||row.valid_until||null;
+}
+function inspectionDisplayStatus(row){
+  const stored=clean(row.status)||'Nog te plannen';
+  if(['Afgekeurd','Niet van toepassing','Ingepland','In behandeling','Nog te plannen'].includes(stored)) return stored;
+  const days=daysUntil(inspectionDeadline(row));
+  if(days===null) return stored==='Geldig'?'Geldig':'Nog te plannen';
+  if(days<0) return 'Verlopen';
+  if(days<=90) return 'Verloopt binnenkort';
+  return 'Geldig';
+}
+function inspectionStatusClass(status){
+  if(status==='Geldig'||status==='Niet van toepassing') return 'ok';
+  if(status==='Verlopen'||status==='Afgekeurd') return 'danger';
+  return 'warning';
+}
+function inspectionStatusBadge(row){
+  const status=inspectionDisplayStatus(row);
+  return statusBadge([status,inspectionStatusClass(status)]);
+}
+function filteredInspections(data){
+  const allowedIds=new Set(data.map(item=>item.id));
+  return rawInspections.filter(row=>{
+    if(row.property_id&&!allowedIds.has(row.property_id)) return false;
+    const property=inspectionProperty(row);
+    const hay=JSON.stringify({...row,object:property?.object,address:property?.straatnaam,house_number:property?.huisnummer}).toLowerCase();
+    if(query&&!hay.includes(query.toLowerCase())) return false;
+    if(inspectionObjectFilter&&row.property_id!==inspectionObjectFilter) return false;
+    if(inspectionTypeFilter&&row.inspection_type!==inspectionTypeFilter) return false;
+    if(inspectionStatusFilter&&inspectionDisplayStatus(row)!==inspectionStatusFilter) return false;
+    return true;
+  }).sort((a,b)=>{
+    const ap=inspectionProperty(a)||{};
+    const bp=inspectionProperty(b)||{};
+    const addressCompare=compareObjectAddress(ap,bp);
+    if(addressCompare!==0) return addressCompare;
+    return String(inspectionDeadline(a)||'9999-12-31').localeCompare(String(inspectionDeadline(b)||'9999-12-31'));
+  });
+}
+function renderInspections(data){
+  const target=el('inspectionOverview');
+  if(!target) return;
+  if(!inspectionsSetupReady){
+    target.innerHTML='<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand voor Keuringen uit.</span></div>';
+    return;
+  }
+  const rows=filteredInspections(data);
+  const all=rawInspections.filter(row=>!row.property_id||data.some(item=>item.id===row.property_id));
+  const valid=all.filter(row=>inspectionDisplayStatus(row)==='Geldig').length;
+  const soon=all.filter(row=>inspectionDisplayStatus(row)==='Verloopt binnenkort').length;
+  const expired=all.filter(row=>inspectionDisplayStatus(row)==='Verlopen').length;
+  const actionNeeded=all.filter(row=>['Nog te plannen','Afgekeurd'].includes(inspectionDisplayStatus(row))).length;
+  const properties=[...data].sort(compareObjectAddress);
+  const types=[...new Set([...INSPECTION_TYPES,...rawInspections.map(row=>row.inspection_type).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
+  const statuses=['Geldig','Verloopt binnenkort','Verlopen','Nog te plannen','Ingepland','In behandeling','Afgekeurd','Niet van toepassing'];
+
+  target.innerHTML=`
+    <div class="panel inspectionIntro">
+      <div><h2>Keuringen</h2><p>Overzicht van SCOPE-keuringen, energielabels en andere inspecties per pand.</p></div>
+      <button id="newInspectionBtn" type="button">+ Keuring toevoegen</button>
+    </div>
+    <div class="cards inspectionSummaryCards">
+      <div class="card"><span>Totaal keuringen</span><strong>${all.length}</strong></div>
+      <div class="card"><span>Geldig</span><strong>${valid}</strong></div>
+      <div class="card"><span>Verloopt binnen 90 dagen</span><strong>${soon}</strong></div>
+      <div class="card"><span>Verlopen</span><strong>${expired}</strong></div>
+      <div class="card"><span>Actie nodig</span><strong>${actionNeeded}</strong></div>
+    </div>
+    <div class="inspectionFilters">
+      <label>Object<select id="inspectionObjectFilter"><option value="">Alle objecten</option>${properties.map(r=>`<option value="${escAttr(r.id)}" ${inspectionObjectFilter===r.id?'selected':''}>${escHtml(r.object)} · ${escHtml([r.straatnaam,r.huisnummer].filter(Boolean).join(' '))}</option>`).join('')}</select></label>
+      <label>Type<select id="inspectionTypeFilter"><option value="">Alle typen</option>${types.map(type=>`<option value="${escAttr(type)}" ${inspectionTypeFilter===type?'selected':''}>${escHtml(type)}</option>`).join('')}</select></label>
+      <label>Status<select id="inspectionStatusFilter"><option value="">Alle statussen</option>${statuses.map(status=>`<option value="${escAttr(status)}" ${inspectionStatusFilter===status?'selected':''}>${escHtml(status)}</option>`).join('')}</select></label>
+    </div>
+    <div class="panel inspectionTablePanel">
+      <div class="inspectionTableWrap">
+        <table id="inspectionTable">
+          <tr><th>Object</th><th>Keuring</th><th>Laatste keuring</th><th>Geldig / volgende</th><th>Keuringsbedrijf</th><th>Certificaat</th><th>Kosten</th><th>Status</th><th>Acties</th></tr>
+          ${rows.map(row=>{
+            const property=inspectionProperty(row);
+            const address=property?[property.straatnaam,property.huisnummer].filter(Boolean).join(' '):'Object ontbreekt';
+            const docButton=row.document_path?`<button class="miniLink openInspectionDocBtn" data-path="${escAttr(row.document_path)}">Open document</button>`:'-';
+            return `<tr>
+              <td><strong>${escHtml(property?.object||'Onbekend object')}</strong><span class="subtle">${escHtml(address)}</span></td>
+              <td><strong>${escHtml(row.inspection_type||'-')}</strong>${row.notes?`<span class="subtle">${escHtml(row.notes)}</span>`:''}</td>
+              <td>${dateFmt(row.inspection_date)}</td>
+              <td>${dateFmt(inspectionDeadline(row))}${row.valid_until&&row.next_inspection_date?`<span class="subtle">Geldig tot ${dateFmt(row.valid_until)}</span>`:''}</td>
+              <td>${escHtml(row.inspection_company||'-')}</td>
+              <td>${row.certificate_number?`<span>${escHtml(row.certificate_number)}</span>`:''}${docButton}</td>
+              <td>${euro2(row.cost)}</td>
+              <td>${inspectionStatusBadge(row)}</td>
+              <td><div class="financialActionGroup"><button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button></div></td>
+            </tr>`;
+          }).join('')||'<tr><td colspan="9">Nog geen keuringen gevonden.</td></tr>'}
+        </table>
+      </div>
+    </div>`;
+}
+function openInspectionModal(id=''){
+  activeInspectionId=id||null;
+  const row=id?rawInspections.find(item=>item.id===id):null;
+  el('inspectionModalTitle').textContent=row?'Keuring bewerken':'Keuring toevoegen';
+  el('inspectionId').value=row?.id||'';
+  el('inspectionPropertyId').innerHTML=propertyOptions(row?.property_id||'').replace('Niet gekoppeld','Kies een object');
+  el('inspectionPropertyId').value=row?.property_id||'';
+  el('inspectionType').value=row?.inspection_type||'SCOPE 10';
+  el('inspectionDate').value=row?.inspection_date||'';
+  el('inspectionValidUntil').value=row?.valid_until||'';
+  el('inspectionNextDate').value=row?.next_inspection_date||'';
+  el('inspectionStatus').value=INSPECTION_STATUSES.includes(row?.status)?row.status:'Geldig';
+  el('inspectionCompany').value=row?.inspection_company||'';
+  el('inspectionCertificate').value=row?.certificate_number||'';
+  el('inspectionCost').value=row?.cost??'';
+  el('inspectionNotes').value=row?.notes||'';
+  el('inspectionDocument').value='';
+  el('inspectionCurrentDocument').textContent=row?.document_name?`Huidig document: ${row.document_name}`:'Nog geen document gekoppeld';
+  el('inspectionMessage').textContent='';
+  el('inspectionModal').classList.remove('hidden');
+}
+function closeInspectionModal(){
+  el('inspectionModal').classList.add('hidden');
+  activeInspectionId=null;
+}
+async function uploadInspectionDocument(file,propertyId){
+  if(!file) return null;
+  if(file.size>15*1024*1024) throw new Error('Het document is groter dan 15 MB.');
+  const allowed=['application/pdf','image/png','image/jpeg','image/webp'];
+  if(file.type&&!allowed.includes(file.type)) throw new Error('Upload een PDF, PNG, JPG of WebP-bestand.');
+  const path=`inspections/${propertyId}/${Date.now()}-${safeFileName(file.name)}`;
+  const result=await sb.storage.from('property-documents').upload(path,file,{upsert:false,cacheControl:'3600'});
+  if(result.error) throw result.error;
+  return {path,name:file.name};
+}
+async function saveInspection(event){
+  event.preventDefault();
+  const message=el('inspectionMessage');
+  message.textContent='Bezig met opslaan...';
+  let uploaded=null;
+  try{
+    if(!inspectionsSetupReady) throw new Error('Voer eerst het SQL-bestand voor Keuringen uit.');
+    const propertyId=el('inspectionPropertyId').value;
+    if(!propertyId) throw new Error('Kies een object.');
+    const existing=activeInspectionId?rawInspections.find(item=>item.id===activeInspectionId):null;
+    uploaded=await uploadInspectionDocument(el('inspectionDocument').files?.[0],propertyId);
+    const payload={
+      property_id:propertyId,
+      inspection_type:clean(el('inspectionType').value),
+      inspection_date:el('inspectionDate').value||null,
+      valid_until:el('inspectionValidUntil').value||null,
+      next_inspection_date:el('inspectionNextDate').value||null,
+      status:el('inspectionStatus').value,
+      inspection_company:clean(el('inspectionCompany').value)||null,
+      certificate_number:clean(el('inspectionCertificate').value)||null,
+      cost:numOrNull(el('inspectionCost').value),
+      notes:clean(el('inspectionNotes').value)||null,
+      document_path:uploaded?.path||existing?.document_path||null,
+      document_name:uploaded?.name||existing?.document_name||null,
+      updated_at:new Date().toISOString()
+    };
+    if(!payload.inspection_type) throw new Error('Kies een type keuring.');
+    const result=activeInspectionId
+      ? await sb.from('property_inspections').update(payload).eq('id',activeInspectionId)
+      : await sb.from('property_inspections').insert(payload);
+    if(result.error) throw result.error;
+    if(uploaded&&existing?.document_path&&existing.document_path!==uploaded.path){
+      const removal=await sb.storage.from('property-documents').remove([existing.document_path]);
+      if(removal.error) console.warn('Oud keuringsdocument kon niet worden verwijderd:',removal.error.message);
+    }
+    closeInspectionModal();
+    await loadData();
+    setPage('onderhoud','Onderhoud');
+    setMaintenanceTab('inspections');
+  }catch(error){
+    console.error(error);
+    if(uploaded?.path) await sb.storage.from('property-documents').remove([uploaded.path]);
+    message.textContent='Opslaan mislukt: '+error.message;
+  }
+}
+async function deleteInspection(id){
+  const row=rawInspections.find(item=>item.id===id);
+  if(!row||!confirm(`Keuring “${row.inspection_type}” verwijderen?`)) return;
+  const result=await sb.from('property_inspections').delete().eq('id',id);
+  if(result.error){alert('Verwijderen mislukt: '+result.error.message);return;}
+  if(row.document_path){
+    const removal=await sb.storage.from('property-documents').remove([row.document_path]);
+    if(removal.error) console.warn('Keuringsdocument kon niet worden verwijderd:',removal.error.message);
+  }
+  await loadData();
+  setPage('onderhoud','Onderhoud');
+    setMaintenanceTab('inspections');
+}
+
+
 function renderContractOverview(data){
   const contracts=data.filter(r=>r.contract?.id);
   const activeContracts=contracts.filter(r=>!r.contract_opgezegd);
@@ -3322,6 +3576,19 @@ function buildAgendaEvents(data){
     }
   });
 
+  const allowedIds=new Set(data.map(item=>item.id));
+  rawInspections.filter(row=>allowedIds.has(row.property_id)).forEach(row=>{
+    const property=inspectionProperty(row);
+    const objectLine=[property?.object,[property?.straatnaam,property?.huisnummer].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+    if(row.inspection_date){
+      addAgendaEvent(events,{date:row.inspection_date,type:'inspection',title:`${row.inspection_type} uitgevoerd`,subtitle:objectLine,objectId:row.property_id},seen);
+    }
+    const deadline=inspectionDeadline(row);
+    if(deadline){
+      addAgendaEvent(events,{date:deadline,type:'inspection',title:`${row.inspection_type} verloopt / opnieuw keuren`,subtitle:objectLine,objectId:row.property_id},seen);
+    }
+  });
+
   return events.sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title,'nl',{sensitivity:'base'}));
 }
 function agendaFilteredEvents(data){
@@ -3425,6 +3692,7 @@ function render(){
     return `<tr><td><strong>${r.object}</strong><span class="subtle">${r.straatnaam} ${r.huisnummer}</span></td><td>${r.huurder}</td><td>${statusBadge(hasContract?[r.contract_status,r.contract_opgezegd?'warning':'ok']:['Geen contract','danger'])}</td><td>${hasContract?dateFmt(r.startdatum_contract):'-'}</td><td>${hasContract?originalEnd:'-'}</td><td>${hasContract?contractEndDisplay(r):'-'}${hasContract?renewalCount:''}</td><td>${hasContract?contractPeriodText(r):'-'}</td><td>${hasContract?(r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))+mismatch:'-'}</td><td>${hasContract?renewalText(r):'-'}</td><td>${statusBadge(hasContract?r.status_opzeg:['Geen contract','danger'])}</td><td><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td></tr>`;
   }).join('');
   if(el('maintenanceOverview')) renderMaintenanceOverview(data);
+  renderInspections(data);
 }
 function maintenanceHistoryHtml(r){
   const rows=(r.maintenance_history||[]).map(m=>`<tr><td>${m.maintenance_type||m.title||'-'}</td><td>${m.build_year||'-'}</td><td>${maintenanceDateFmt(m.done_date||m.planned_date)}</td><td>${maintenanceDateFmt(m.planned_date)}</td><td>${m.supplier||'-'}</td><td>${maintenanceStatusLabel(m.status)}</td><td>${euro(m.cost||0)}</td><td><button class="miniLink editMaintBtn" data-key="${rawMaintenanceHistory.some(h=>h.id===m.id)?'history':'maintenance'}:${m.id}">Bewerk</button> <button class="miniLink deleteHistBtn" data-id="${m.id}">Verwijder</button></td></tr>`).join('');
@@ -3577,6 +3845,9 @@ function init(){
     const quickLetter=e.target.closest('.rentQuickLetterBtn');
     const serviceEdit=e.target.closest('.serviceCostEditBtn');
     const serviceQuickLetter=e.target.closest('.serviceCostQuickLetterBtn');
+    const editInspection=e.target.closest('.editInspectionBtn');
+    const deleteInspectionButton=e.target.closest('.deleteInspectionBtn');
+    const openInspectionDoc=e.target.closest('.openInspectionDocBtn');
     if(detail) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
@@ -3590,6 +3861,10 @@ function init(){
     if(quickLetter){ openRentIncreaseModal(quickLetter.dataset.id,quickLetter.dataset.date); setTimeout(openRentConceptLetter,0); }
     if(serviceEdit) openServiceCostModal(serviceEdit.dataset.id,serviceEdit.dataset.year);
     if(serviceQuickLetter){ openServiceCostModal(serviceQuickLetter.dataset.id,serviceQuickLetter.dataset.year); setTimeout(openServiceCostLetter,0); }
+    if(editInspection) openInspectionModal(editInspection.dataset.id);
+    if(deleteInspectionButton) deleteInspection(deleteInspectionButton.dataset.id);
+    if(openInspectionDoc) openDocument(openInspectionDoc.dataset.path);
+    if(e.target.closest('#newInspectionBtn')) openInspectionModal();
   });
   el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const remember=Boolean(el('rememberLogin')?.checked); try{localStorage.setItem(REMEMBER_LOGIN_KEY,String(remember));}catch(error){} if(!remember) clearPersistedSupabaseSession(); const {data,error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} initializeSessionSecurity(data.session,{freshLogin:true}); el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });
@@ -3599,6 +3874,9 @@ function init(){
     if(e.target.id==='maintenanceObjectFilter'){ maintenanceObjectFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); }
+    if(e.target.id==='inspectionObjectFilter'){ inspectionObjectFilter=e.target.value; renderInspections(filtered()); }
+    if(e.target.id==='inspectionTypeFilter'){ inspectionTypeFilter=e.target.value; renderInspections(filtered()); }
+    if(e.target.id==='inspectionStatusFilter'){ inspectionStatusFilter=e.target.value; renderInspections(filtered()); }
     if(e.target.id==='serviceCostYear'){ serviceCostYear=Number(e.target.value); renderServiceCostOverview(filtered()); }
   });
   el('newPropertyBtn').addEventListener('click', openNewProperty);
@@ -3630,6 +3908,7 @@ function init(){
   el('rentProposalStatus')?.addEventListener('change',updateRentApplyButton);
   el('rentLetterBtn')?.addEventListener('click',openRentConceptLetter);
   el('applyRentIncreaseBtn')?.addEventListener('click',applyRentIncrease);
+  document.querySelectorAll('.maintenanceTab').forEach(button=>button.addEventListener('click',()=>setMaintenanceTab(button.dataset.maintenanceTab)));
   document.querySelectorAll('.financialTab').forEach(button=>button.addEventListener('click',()=>setFinancialTab(button.dataset.financialTab)));
   el('agendaPrevBtn')?.addEventListener('click',()=>shiftAgendaMonth(-1));
   el('agendaTodayBtn')?.addEventListener('click',agendaToday);
@@ -3653,6 +3932,9 @@ function init(){
   el('pwaReloadBtn')?.addEventListener('click',activatePwaUpdate);
   el('pwaUpdateToastBtn')?.addEventListener('click',activatePwaUpdate);
   el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty); el('closeMaintenanceModalBtn').addEventListener('click', closeMaintenanceModal); el('maintenanceEditForm').addEventListener('submit', saveMaintenanceEdit); el('deleteMaintenanceRowBtn').addEventListener('click', deleteMaintenanceEdit);
+  el('closeInspectionModalBtn')?.addEventListener('click',closeInspectionModal);
+  el('closeInspectionFormBtn')?.addEventListener('click',closeInspectionModal);
+  el('inspectionForm')?.addEventListener('submit',saveInspection);
   sb.auth.onAuthStateChange((event,session)=>{
     if(event==='SIGNED_OUT'&&!sessionLogoutInProgress){stopSessionSecurity();clearSessionMeta();showLogin('Je sessie is beëindigd. Log opnieuw in.');}
     if(event==='TOKEN_REFRESHED'&&session) checkSessionSecurity();
