@@ -4248,8 +4248,23 @@ async function uploadPropertyPhoto(propertyId, file){
 }
 
 async function syncScope10InspectionFromProperty(propertyId,validUntil){
-  const existing=inspectionsForProperty(propertyId,'SCOPE 10')[0]||null;
   const normalizedDate=validUntil||null;
+
+  // Lees rechtstreeks uit Supabase. Zo zijn we niet afhankelijk van een
+  // mogelijk verouderde lokale lijst en worden dubbele SCOPE 10-regels gevonden.
+  const lookup=await sb
+    .from('property_inspections')
+    .select('*')
+    .eq('property_id',propertyId);
+
+  if(lookup.error) throw lookup.error;
+
+  const scopeRows=(lookup.data||[])
+    .filter(row=>normalizedInspectionType(row.inspection_type)===normalizedInspectionType('SCOPE 10'))
+    .sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')));
+
+  const primary=scopeRows[0]||null;
+  const duplicates=scopeRows.slice(1);
   const payload={
     property_id:propertyId,
     inspection_type:'SCOPE 10',
@@ -4259,13 +4274,48 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
     updated_at:new Date().toISOString()
   };
 
-  const result=existing
-    ? await sb.from('property_inspections').update(payload).eq('id',existing.id).select('id').single()
-    : normalizedDate
-      ? await sb.from('property_inspections').insert(payload).select('id').single()
-      : {error:null};
+  let savedRow=null;
 
-  if(result.error) throw result.error;
+  if(primary){
+    const updated=await sb
+      .from('property_inspections')
+      .update(payload)
+      .eq('id',primary.id)
+      .select('*')
+      .single();
+
+    if(updated.error) throw updated.error;
+    savedRow=updated.data;
+  }else if(normalizedDate){
+    const inserted=await sb
+      .from('property_inspections')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if(inserted.error) throw inserted.error;
+    savedRow=inserted.data;
+  }
+
+  // Oude dubbele SCOPE 10-keuringen kunnen ervoor zorgen dat het overzicht
+  // een andere datum toont. Deze dubbele regels worden daarom verwijderd.
+  if(duplicates.length){
+    const duplicateIds=duplicates.map(row=>row.id).filter(Boolean);
+    const removed=await sb
+      .from('property_inspections')
+      .delete()
+      .in('id',duplicateIds);
+
+    if(removed.error) throw removed.error;
+  }
+
+  // Werk de lokale lijst direct bij; loadData volgt daarna nogmaals.
+  rawInspections=rawInspections.filter(row=>
+    !(row.property_id===propertyId&&normalizedInspectionType(row.inspection_type)===normalizedInspectionType('SCOPE 10'))
+  );
+  if(savedRow) rawInspections.push(savedRow);
+
+  return savedRow;
 }
 
 async function saveProperty(e){
@@ -4291,7 +4341,11 @@ async function saveProperty(e){
     if(conRes.error){el('formMessage').textContent=conRes.error.message;return;}
   }
   if(el('maintenanceTitle').value.trim() || el('maintenancePlannedDate').value){ const maintenancePayload={property_id:savedProperty.id,title:el('maintenanceTitle').value.trim()||'Onderhoud',description:el('maintenanceDescription').value||null,planned_date:el('maintenancePlannedDate').value||el('propertyScopeValidUntil').value||null,cost:numOrNull(el('maintenanceCost').value),priority:el('maintenancePriority').value||'Normaal',status:el('maintenanceStatus').value||'Te plannen'}; const mainRes=await upsertEntity('maintenance',maintenanceId,maintenancePayload); if(mainRes.error){el('formMessage').textContent=mainRes.error.message;return;} }
-  closeModal(); selectedPropertyId=savedProperty.id; await loadData(); renderDetail(savedProperty.id);
+  closeModal();
+  selectedPropertyId=savedProperty.id;
+  await loadData();
+  renderDetail(savedProperty.id);
+  if(activeMaintenanceTab==='inspections') renderInspections(filtered());
 }
 async function deleteProperty(){ const id=el('propertyId').value; if(!id || !confirm('Weet je zeker dat je dit object wilt verwijderen?')) return; const {error}=await sb.from('properties').delete().eq('id',id); if(error){el('formMessage').textContent=error.message;return;} closeModal(); selectedPropertyId=null; await loadData(); setPage('objecten','Objecten'); }
 function updateCalculatedNoticeDate(){
