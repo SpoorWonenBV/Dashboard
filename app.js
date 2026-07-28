@@ -52,6 +52,141 @@ const escAttr = value => String(value || '').replace(/&/g,'&amp;').replace(/"/g,
 const escHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 
 
+/* v39: strengere sessiebeveiliging */
+const REMEMBER_LOGIN_KEY='vastgoedRememberLogin';
+const SESSION_STARTED_KEY='vastgoedSessionStartedAt';
+const SESSION_LAST_ACTIVITY_KEY='vastgoedSessionLastActivityAt';
+const SESSION_HIDDEN_AT_KEY='vastgoedSessionHiddenAt';
+const INACTIVITY_TIMEOUT_MS=30*60*1000;
+const MAX_SESSION_DURATION_MS=8*60*60*1000;
+const BACKGROUND_TIMEOUT_MS=15*60*1000;
+let sessionSecurityTimer=null;
+let sessionSecurityActive=false;
+let sessionLogoutInProgress=false;
+let lastActivityWrite=0;
+
+function rememberLoginEnabled(){
+  try{return localStorage.getItem(REMEMBER_LOGIN_KEY)==='true';}
+  catch(error){return false;}
+}
+function sessionMetaStorage(){return rememberLoginEnabled()?localStorage:sessionStorage;}
+function setSessionMeta(key,value){
+  try{
+    const target=sessionMetaStorage();
+    const other=target===localStorage?sessionStorage:localStorage;
+    target.setItem(key,String(value));
+    other.removeItem(key);
+  }catch(error){console.warn('Sessiebeveiliging kon niet worden opgeslagen:',error.message);}
+}
+function getSessionMeta(key){
+  try{return sessionMetaStorage().getItem(key);}
+  catch(error){return null;}
+}
+function clearSessionMeta(){
+  [localStorage,sessionStorage].forEach(storage=>{
+    try{
+      storage.removeItem(SESSION_STARTED_KEY);
+      storage.removeItem(SESSION_LAST_ACTIVITY_KEY);
+      storage.removeItem(SESSION_HIDDEN_AT_KEY);
+    }catch(error){}
+  });
+}
+function clearPersistedSupabaseSession(){
+  try{
+    Object.keys(localStorage).forEach(key=>{
+      if((key.startsWith('sb-')&&key.includes('auth-token'))||key.includes('code-verifier')) localStorage.removeItem(key);
+    });
+  }catch(error){console.warn('Oude login kon niet lokaal worden opgeschoond:',error.message);}
+}
+const secureAuthStorage={
+  getItem(key){
+    try{return (rememberLoginEnabled()?localStorage:sessionStorage).getItem(key);}
+    catch(error){return null;}
+  },
+  setItem(key,value){
+    try{
+      const target=rememberLoginEnabled()?localStorage:sessionStorage;
+      const other=target===localStorage?sessionStorage:localStorage;
+      target.setItem(key,value);
+      other.removeItem(key);
+    }catch(error){console.warn('Login kon niet veilig worden opgeslagen:',error.message);}
+  },
+  removeItem(key){
+    try{localStorage.removeItem(key);}catch(error){}
+    try{sessionStorage.removeItem(key);}catch(error){}
+  }
+};
+function recordUserActivity(force=false){
+  if(!sessionSecurityActive||document.hidden) return;
+  const now=Date.now();
+  if(!force&&now-lastActivityWrite<30_000) return;
+  lastActivityWrite=now;
+  setSessionMeta(SESSION_LAST_ACTIVITY_KEY,now);
+}
+function initializeSessionSecurity(session,{freshLogin=false}={}){
+  if(!session) return;
+  const now=Date.now();
+  let started=Number(getSessionMeta(SESSION_STARTED_KEY));
+  if(freshLogin||!Number.isFinite(started)||started<=0){
+    const fallback=Date.parse(session.user?.last_sign_in_at||'');
+    started=Number.isFinite(fallback)?fallback:now;
+    setSessionMeta(SESSION_STARTED_KEY,started);
+  }
+  if(!Number(getSessionMeta(SESSION_LAST_ACTIVITY_KEY))) setSessionMeta(SESSION_LAST_ACTIVITY_KEY,now);
+  sessionSecurityActive=true;
+  recordUserActivity(true);
+  if(sessionSecurityTimer) clearInterval(sessionSecurityTimer);
+  sessionSecurityTimer=setInterval(checkSessionSecurity,60_000);
+}
+function stopSessionSecurity(){
+  sessionSecurityActive=false;
+  if(sessionSecurityTimer){clearInterval(sessionSecurityTimer);sessionSecurityTimer=null;}
+}
+async function secureLogout(reason='Je bent uitgelogd.'){
+  if(sessionLogoutInProgress) return;
+  sessionLogoutInProgress=true;
+  stopSessionSecurity();
+  try{await sb?.auth.signOut({scope:'local'});}catch(error){console.warn('Uitloggen gaf een melding:',error.message);}
+  clearSessionMeta();
+  vastgoedData=[];
+  await applyBranding(DEFAULT_BRANDING);
+  showLogin(reason);
+  sessionLogoutInProgress=false;
+}
+async function checkSessionSecurity(){
+  if(!sessionSecurityActive||document.hidden) return;
+  const now=Date.now();
+  const started=Number(getSessionMeta(SESSION_STARTED_KEY));
+  const lastActivity=Number(getSessionMeta(SESSION_LAST_ACTIVITY_KEY));
+  if(Number.isFinite(started)&&now-started>=MAX_SESSION_DURATION_MS){
+    await secureLogout('Je sessie van 8 uur is verlopen. Log opnieuw in.');
+    return;
+  }
+  if(Number.isFinite(lastActivity)&&now-lastActivity>=INACTIVITY_TIMEOUT_MS){
+    await secureLogout('Je bent na 30 minuten inactiviteit automatisch uitgelogd.');
+  }
+}
+function handleVisibilitySecurity(){
+  if(!sessionSecurityActive) return;
+  if(document.hidden){
+    setSessionMeta(SESSION_HIDDEN_AT_KEY,Date.now());
+    return;
+  }
+  const hiddenAt=Number(getSessionMeta(SESSION_HIDDEN_AT_KEY));
+  setSessionMeta(SESSION_HIDDEN_AT_KEY,'');
+  if(Number.isFinite(hiddenAt)&&hiddenAt>0&&Date.now()-hiddenAt>=BACKGROUND_TIMEOUT_MS){
+    secureLogout('De app was langer dan 15 minuten op de achtergrond. Log opnieuw in.');
+    return;
+  }
+  checkSessionSecurity();
+  recordUserActivity(true);
+}
+function bindSessionSecurityEvents(){
+  ['pointerdown','keydown','touchstart','scroll'].forEach(type=>window.addEventListener(type,()=>recordUserActivity(false),{passive:true}));
+  document.addEventListener('visibilitychange',handleVisibilitySecurity);
+}
+
+
 /* v38.4: robuuste PWA-installatie voor telefoon en desktop */
 let deferredInstallPrompt=null;
 let pwaRegistration=null;
@@ -2023,15 +2158,25 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
     return {id:p.id, property:p, contract, contract_timeline:timeline, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, waarborgsom:p.deposit||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', maand_huurverhoging:p.rent_increase_month||'', oorspronkelijke_einddatum_contract:timeline.originalEnd, einddatum_contract:contractEnd, contract_onbepaalde:indefiniteContract, contract_status:timeline.storedStatus, contract_opgezegd:timeline.terminated, startdatum_contract:contract.start_date||'', oorspronkelijke_opzegdatum:timeline.initialNotice, opzegdatum:noticeDate, opzegtermijn_maanden:timeline.noticeMonths, verlenging_jaren:timeline.renewalYears, aantal_verlengingen:timeline.renewalCount, opzegdatum_afwijking:timeline.noticeMismatch, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:timeline.contractStatus, status_opzeg:timeline.noticeStatus, status_scope:getDateStatus(scopeDate,365,90), status_energy:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
   });
 }
-function showLogin(){ el('loginView').classList.remove('hidden'); el('appView').classList.add('hidden'); }
+function showLogin(message=''){ el('loginView').classList.remove('hidden'); el('appView').classList.add('hidden'); if(el('loginError')) el('loginError').textContent=message; if(el('password')) el('password').value=''; }
 function showApp(){ el('loginView').classList.add('hidden'); el('appView').classList.remove('hidden'); }
 async function checkSession(){
-  const {data}=await sb.auth.getSession();
+  const {data,error}=await sb.auth.getSession();
+  if(error){
+    console.warn('Sessiecontrole mislukt:',error.message);
+    await secureLogout('Je sessie kon niet veilig worden gecontroleerd. Log opnieuw in.');
+    return;
+  }
   if(data.session){
+    initializeSessionSecurity(data.session);
+    await checkSessionSecurity();
+    if(!sessionSecurityActive) return;
     showApp();
     await loadBranding();
     await loadData();
   }else{
+    stopSessionSecurity();
+    clearSessionMeta();
     await applyBranding(DEFAULT_BRANDING);
     showLogin();
   }
@@ -3406,7 +3551,10 @@ function updateCalculatedNoticeDate(){
 
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
-  sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
+  sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storage:secureAuthStorage}});
+  bindSessionSecurityEvents();
+  if(el('rememberLogin')) el('rememberLogin').checked=rememberLoginEnabled();
   initSidebar();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
@@ -3443,9 +3591,9 @@ function init(){
     if(serviceEdit) openServiceCostModal(serviceEdit.dataset.id,serviceEdit.dataset.year);
     if(serviceQuickLetter){ openServiceCostModal(serviceQuickLetter.dataset.id,serviceQuickLetter.dataset.year); setTimeout(openServiceCostLetter,0); }
   });
-  el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const {error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });
+  el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const remember=Boolean(el('rememberLogin')?.checked); try{localStorage.setItem(REMEMBER_LOGIN_KEY,String(remember));}catch(error){} if(!remember) clearPersistedSupabaseSession(); const {data,error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} initializeSessionSecurity(data.session,{freshLogin:true}); el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });
-  el('logoutBtn').addEventListener('click', async()=>{ await sb.auth.signOut(); vastgoedData=[]; await applyBranding(DEFAULT_BRANDING); showLogin(); });
+  el('logoutBtn').addEventListener('click',()=>secureLogout('Je bent veilig uitgelogd.'));
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{
     if(e.target.id==='maintenanceObjectFilter'){ maintenanceObjectFilter=e.target.value; render(); }
@@ -3505,6 +3653,10 @@ function init(){
   el('pwaReloadBtn')?.addEventListener('click',activatePwaUpdate);
   el('pwaUpdateToastBtn')?.addEventListener('click',activatePwaUpdate);
   el('closeModalBtn').addEventListener('click', closeModal); el('propertyForm').addEventListener('submit', saveProperty); el('deletePropertyBtn').addEventListener('click', deleteProperty); el('closeMaintenanceModalBtn').addEventListener('click', closeMaintenanceModal); el('maintenanceEditForm').addEventListener('submit', saveMaintenanceEdit); el('deleteMaintenanceRowBtn').addEventListener('click', deleteMaintenanceEdit);
+  sb.auth.onAuthStateChange((event,session)=>{
+    if(event==='SIGNED_OUT'&&!sessionLogoutInProgress){stopSessionSecurity();clearSessionMeta();showLogin('Je sessie is beëindigd. Log opnieuw in.');}
+    if(event==='TOKEN_REFRESHED'&&session) checkSessionSecurity();
+  });
   initPwa();
   checkSession();
 }

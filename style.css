@@ -1157,3 +1157,9 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   .pwaUpdateToast{right:14px;bottom:14px;left:14px;max-width:none;align-items:flex-start;flex-direction:column}
   .pwaUpdateToast button{width:100%}
 }
+
+
+/* v39: sessiebeveiliging op het inlogscherm */
+.rememberLoginRow{display:flex;align-items:flex-start;gap:9px;margin:12px 0 6px;color:#334155;font-size:13px;font-weight:700;line-height:1.4;cursor:pointer}
+.rememberLoginRow input{width:18px!important;height:18px;margin:1px 0 0!important;flex:0 0 18px;accent-color:var(--brand-primary)}
+.loginSecurityHint{margin:0 0 14px!important;color:#64748b!important;font-size:12px;line-height:1.45}

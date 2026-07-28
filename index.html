@@ -22,8 +22,10 @@
         <h1 id="loginCompanyName">Vastgoed Dashboard</h1>
         <p id="loginSubtitle">Log in om je vastgoeddata te bekijken.</p>
       </div>
-      <input id="email" type="email" placeholder="E-mailadres">
-      <input id="password" type="password" placeholder="Wachtwoord">
+      <input id="email" type="email" placeholder="E-mailadres" autocomplete="username">
+      <input id="password" type="password" placeholder="Wachtwoord" autocomplete="current-password">
+      <label class="rememberLoginRow"><input id="rememberLogin" type="checkbox"> <span>Ingelogd blijven op dit vertrouwde apparaat</span></label>
+      <p class="loginSecurityHint">Standaard word je na sluiten van de browser uitgelogd. Daarnaast volgt automatische uitlog na 30 minuten inactiviteit, 15 minuten op de achtergrond of maximaal 8 uur.</p>
       <button id="loginBtn">Inloggen</button>
       <p id="loginError" class="errorText"></p>
     </div>
