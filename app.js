@@ -3333,6 +3333,38 @@ function filteredInspections(data){
     return String(inspectionDeadline(a)||'9999-12-31').localeCompare(String(inspectionDeadline(b)||'9999-12-31'));
   });
 }
+function inspectionRowTable(rows){
+  const sortedRows=[...rows].sort((a,b)=>{
+    const typeCompare=String(a.inspection_type||'').localeCompare(String(b.inspection_type||''),'nl',{sensitivity:'base',numeric:true});
+    if(typeCompare!==0) return typeCompare;
+    return String(inspectionDeadline(a)||'9999-12-31').localeCompare(String(inspectionDeadline(b)||'9999-12-31'));
+  });
+
+  return `<table class="maintenanceObjectTable inspectionObjectTable">
+    <tr><th>Keuring</th><th>Laatste keuring</th><th>Geldig / volgende</th><th>Keuringsbedrijf</th><th>Certificaat</th><th>Kosten</th><th>Status</th><th>Acties</th></tr>
+    ${sortedRows.map(row=>{
+      const docButton=row.document_path
+        ? `<button class="miniLink openInspectionDocBtn" data-path="${escAttr(row.document_path)}">Open document</button>`
+        : '-';
+      const sourceTag=row.derived_from_property?'<span class="inspectionSourceTag">Uit objectgegevens</span>':'';
+      const actions=row.derived_from_property
+        ? `<button class="miniLink detailBtn" data-id="${escAttr(row.property_id)}">Open object</button>`
+        : `<button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button>`;
+
+      return `<tr>
+        <td><strong>${escHtml(row.inspection_type||'-')}</strong>${sourceTag}${row.notes?`<span class="subtle">${escHtml(row.notes)}</span>`:''}</td>
+        <td>${dateFmt(row.inspection_date)}</td>
+        <td>${dateFmt(inspectionDeadline(row))}${row.valid_until&&row.next_inspection_date?`<span class="subtle">Geldig tot ${dateFmt(row.valid_until)}</span>`:''}</td>
+        <td>${escHtml(row.inspection_company||'-')}</td>
+        <td>${row.certificate_number?`<span>${escHtml(row.certificate_number)}</span>`:''}${docButton}</td>
+        <td>${row.derived_from_property?'-':euro2(row.cost)}</td>
+        <td>${inspectionStatusBadge(row)}</td>
+        <td><div class="financialActionGroup">${actions}</div></td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="8">Nog geen keuringen gevonden.</td></tr>'}
+  </table>`;
+}
+
 function renderInspections(data){
   const target=el('inspectionOverview');
   if(!target) return;
@@ -3340,68 +3372,90 @@ function renderInspections(data){
     target.innerHTML='<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand voor Keuringen uit.</span></div>';
     return;
   }
+
   const rows=filteredInspections(data);
   const all=allInspectionRows(data);
   const valid=all.filter(row=>inspectionDisplayStatus(row)==='Geldig').length;
   const soon=all.filter(row=>inspectionDisplayStatus(row)==='Verloopt binnenkort').length;
   const expired=all.filter(row=>inspectionDisplayStatus(row)==='Verlopen').length;
   const actionNeeded=all.filter(row=>['Nog te plannen','Afgekeurd'].includes(inspectionDisplayStatus(row))).length;
+  const totalCost=all.reduce((sum,row)=>sum+Number(row.derived_from_property?0:row.cost||0),0);
+
   const properties=[...data].sort(compareObjectAddress);
-  const types=[...new Set([...INSPECTION_TYPES,...all.map(row=>row.inspection_type).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
+  const types=[...new Set([...INSPECTION_TYPES,...all.map(row=>row.inspection_type).filter(Boolean)])]
+    .sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
   const statuses=['Geldig','Verloopt binnenkort','Verlopen','Nog te plannen','Ingepland','In behandeling','Afgekeurd','Niet van toepassing'];
 
-  target.innerHTML=`
-    <div class="panel inspectionIntro">
-      <div><h2>Keuringen</h2><p>Overzicht van SCOPE-keuringen, energielabels en andere inspecties per pand.</p></div>
-      <button id="newInspectionBtn" type="button">+ Keuring toevoegen</button>
-    </div>
-    <div class="cards inspectionSummaryCards">
-      <div class="card"><span>Totaal keuringen</span><strong>${all.length}</strong></div>
-      <div class="card"><span>Geldig</span><strong>${valid}</strong></div>
-      <div class="card"><span>Verloopt binnen 90 dagen</span><strong>${soon}</strong></div>
-      <div class="card"><span>Verlopen</span><strong>${expired}</strong></div>
-      <div class="card"><span>Actie nodig</span><strong>${actionNeeded}</strong></div>
-    </div>
-    <div class="inspectionFilters">
-      <label>Object<select id="inspectionObjectFilter"><option value="">Alle objecten</option>${properties.map(r=>`<option value="${escAttr(r.id)}" ${inspectionObjectFilter===r.id?'selected':''}>${escHtml(r.object)} · ${escHtml([r.straatnaam,r.huisnummer].filter(Boolean).join(' '))}</option>`).join('')}</select></label>
-      <label>Type<select id="inspectionTypeFilter"><option value="">Alle typen</option>${types.map(type=>`<option value="${escAttr(type)}" ${inspectionTypeFilter===type?'selected':''}>${escHtml(type)}</option>`).join('')}</select></label>
-      <label>Status<select id="inspectionStatusFilter"><option value="">Alle statussen</option>${statuses.map(status=>`<option value="${escAttr(status)}" ${inspectionStatusFilter===status?'selected':''}>${escHtml(status)}</option>`).join('')}</select></label>
-    </div>
-    <div class="panel inspectionTablePanel">
-      <div class="inspectionTableWrap">
-        <table id="inspectionTable">
-          <tr><th>Object</th><th>Keuring</th><th>Laatste keuring</th><th>Geldig / volgende</th><th>Keuringsbedrijf</th><th>Certificaat</th><th>Kosten</th><th>Status</th><th>Acties</th></tr>
-          ${rows.map(row=>{
-            const property=inspectionProperty(row);
-            const address=property?[property.straatnaam,property.huisnummer].filter(Boolean).join(' '):'Object ontbreekt';
-            const docButton=row.document_path?`<button class="miniLink openInspectionDocBtn" data-path="${escAttr(row.document_path)}">Open document</button>`:'-';
-            const sourceTag=row.derived_from_property?'<span class="inspectionSourceTag">Uit objectgegevens</span>':'';
-            const actions=row.derived_from_property
-              ? `<button class="miniLink detailBtn" data-id="${escAttr(row.property_id)}">Open object</button>`
-              : `<button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button>`;
-            return `<tr>
-              <td><strong>${escHtml(property?.object||'Onbekend object')}</strong><span class="subtle">${escHtml(address)}</span></td>
-              <td><strong>${escHtml(row.inspection_type||'-')}</strong>${sourceTag}${row.notes?`<span class="subtle">${escHtml(row.notes)}</span>`:''}</td>
-              <td>${dateFmt(row.inspection_date)}</td>
-              <td>${dateFmt(inspectionDeadline(row))}${row.valid_until&&row.next_inspection_date?`<span class="subtle">Geldig tot ${dateFmt(row.valid_until)}</span>`:''}</td>
-              <td>${escHtml(row.inspection_company||'-')}</td>
-              <td>${row.certificate_number?`<span>${escHtml(row.certificate_number)}</span>`:''}${docButton}</td>
-              <td>${row.derived_from_property?'-':euro2(row.cost)}</td>
-              <td>${inspectionStatusBadge(row)}</td>
-              <td><div class="financialActionGroup">${actions}</div></td>
-            </tr>`;
-          }).join('')||'<tr><td colspan="9">Nog geen keuringen gevonden.</td></tr>'}
-        </table>
-      </div>
-    </div>`;
+  const filterHtml=`<div class="maintenanceFilters maintenanceFiltersWide">
+    <label>Object<select id="inspectionObjectFilter"><option value="">Alle objecten</option>${properties.map(r=>`<option value="${escAttr(r.id)}" ${inspectionObjectFilter===r.id?'selected':''}>${escHtml(r.object)} · ${escHtml([r.straatnaam,r.huisnummer].filter(Boolean).join(' '))}</option>`).join('')}</select></label>
+    <label>Type<select id="inspectionTypeFilter"><option value="">Alle typen</option>${types.map(type=>`<option value="${escAttr(type)}" ${inspectionTypeFilter===type?'selected':''}>${escHtml(type)}</option>`).join('')}</select></label>
+    <label>Status<select id="inspectionStatusFilter"><option value="">Alle statussen</option>${statuses.map(status=>`<option value="${escAttr(status)}" ${inspectionStatusFilter===status?'selected':''}>${escHtml(status)}</option>`).join('')}</select></label>
+  </div>`;
+
+  const summaryHtml=`<div class="cards maintenanceCards">
+    <div class="card"><span>Totaal keuringen</span><strong>${all.length}</strong></div>
+    <div class="card"><span>Geldig</span><strong>${valid}</strong></div>
+    <div class="card"><span>Verloopt binnen 90 dagen</span><strong>${soon}</strong></div>
+    <div class="card"><span>Verlopen</span><strong>${expired}</strong></div>
+    <div class="card"><span>Actie nodig</span><strong>${actionNeeded}</strong></div>
+    <div class="card"><span>Totale kosten</span><strong>${euro(totalCost)}</strong></div>
+  </div>`;
+
+  const grouped={};
+  rows.forEach(row=>{
+    const property=inspectionProperty(row);
+    const key=row.property_id||`unknown:${row.id}`;
+    if(!grouped[key]){
+      grouped[key]={
+        objectId:row.property_id||'',
+        object:property?.object||'Onbekend object',
+        address:property?[property.straatnaam,property.huisnummer].filter(Boolean).join(' '):'Geen adres bekend',
+        rows:[]
+      };
+    }
+    grouped[key].rows.push(row);
+  });
+
+  const groupHtml=Object.values(grouped)
+    .sort((a,b)=>{
+      const ap=getPropertyById(a.objectId)||{straatnaam:a.address,huisnummer:''};
+      const bp=getPropertyById(b.objectId)||{straatnaam:b.address,huisnummer:''};
+      return compareObjectAddress(ap,bp);
+    })
+    .map(group=>{
+      const next=group.rows.map(inspectionDeadline).filter(Boolean).sort()[0];
+      const costs=group.rows.reduce((sum,row)=>sum+Number(row.derived_from_property?0:row.cost||0),0);
+      return `<article class="maintenanceObjectCard inspectionObjectCard">
+        <div class="maintenanceObjectHeader">
+          <div>
+            <h3>${escHtml(group.object)}</h3>
+            <p class="meta">${escHtml(group.address||'Geen adres bekend')} • ${group.rows.length} ${group.rows.length===1?'keuring':'keuringen'} • eerstvolgende: ${dateFmt(next)}</p>
+          </div>
+          <div class="detailActions">
+            ${group.objectId?`<button class="secondaryBtn detailBtn" data-id="${escAttr(group.objectId)}">Open object</button>`:''}
+            <button class="smallBtn newInspectionForObjectBtn" data-id="${escAttr(group.objectId)}">+ Keuring</button>
+          </div>
+        </div>
+        <div class="row"><span>Totale keuringskosten</span><strong>${euro(costs)}</strong></div>
+        ${inspectionRowTable(group.rows)}
+      </article>`;
+    }).join('');
+
+  const emptyHtml=`<div class="panel inspectionEmptyPanel">
+    <p>Geen keuringen gevonden met de huidige filters.</p>
+    <button id="newInspectionBtn" type="button">+ Keuring toevoegen</button>
+  </div>`;
+
+  target.innerHTML=summaryHtml+filterHtml+(groupHtml||emptyHtml);
 }
-function openInspectionModal(id=''){
+function openInspectionModal(id='',propertyId=''){
   activeInspectionId=id||null;
   const row=id?rawInspections.find(item=>item.id===id):null;
   el('inspectionModalTitle').textContent=row?'Keuring bewerken':'Keuring toevoegen';
   el('inspectionId').value=row?.id||'';
-  el('inspectionPropertyId').innerHTML=propertyOptions(row?.property_id||'').replace('Niet gekoppeld','Kies een object');
-  el('inspectionPropertyId').value=row?.property_id||'';
+  const selectedPropertyId=row?.property_id||propertyId||'';
+  el('inspectionPropertyId').innerHTML=propertyOptions(selectedPropertyId).replace('Niet gekoppeld','Kies een object');
+  el('inspectionPropertyId').value=selectedPropertyId;
   el('inspectionType').value=row?.inspection_type||'SCOPE 10';
   el('inspectionDate').value=row?.inspection_date||'';
   el('inspectionValidUntil').value=row?.valid_until||'';
@@ -3905,6 +3959,8 @@ function init(){
     if(editInspection) openInspectionModal(editInspection.dataset.id);
     if(deleteInspectionButton) deleteInspection(deleteInspectionButton.dataset.id);
     if(openInspectionDoc) openDocument(openInspectionDoc.dataset.path);
+    const newInspectionForObject=e.target.closest('.newInspectionForObjectBtn');
+    if(newInspectionForObject) openInspectionModal('',newInspectionForObject.dataset.id||'');
     if(e.target.closest('#newInspectionBtn')) openInspectionModal();
   });
   el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const remember=Boolean(el('rememberLogin')?.checked); try{localStorage.setItem(REMEMBER_LOGIN_KEY,String(remember));}catch(error){} if(!remember) clearPersistedSupabaseSession(); const {data,error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} initializeSessionSecurity(data.session,{freshLogin:true}); el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });

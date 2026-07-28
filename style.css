@@ -1231,3 +1231,20 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   font-weight:800;
   vertical-align:middle;
 }
+
+
+/* v40.3: Keuringen visueel gelijk aan Onderhoud */
+.inspectionObjectCard{margin-top:16px}
+.inspectionObjectTable{margin-top:12px}
+.inspectionObjectTable td:last-child{white-space:nowrap}
+.inspectionObjectTable td{vertical-align:top}
+.inspectionObjectTable td:first-child{min-width:180px}
+.inspectionEmptyPanel{text-align:center}
+.inspectionEmptyPanel p{margin:0 0 14px;color:#64748b}
+@media(max-width:900px){
+  .inspectionObjectTable{
+    display:block;
+    overflow-x:auto;
+    font-size:13px;
+  }
+}
