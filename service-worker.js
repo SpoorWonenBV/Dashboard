@@ -1,16 +1,16 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v40-20';
+const CACHE_NAME='vastgoed-dashboard-static-v40-21';
 const OFFLINE_URL='/offline.html';
 const STATIC_PATHS=new Set([
   '/style.css',
   '/app.js',
-  '/vastgoed-v40-20.webmanifest',
+  '',
   OFFLINE_URL,
-  '/vastgoed-icon-192-v40-20.png',
-  '/vastgoed-icon-512-v40-20.png',
-  '/vastgoed-icon-maskable-512-v40-20.png',
-  '/vastgoed-apple-touch-icon-v40-20.png'
+  '',
+  '',
+  '',
+  ''
 ]);
 
 self.addEventListener('install',event=>{
