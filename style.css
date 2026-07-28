@@ -1305,3 +1305,36 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   .pageFilters{grid-template-columns:1fr}
   .pageFilters .clearPageFiltersBtn{width:100%}
 }
+
+
+/* v40.14: maandelijkse Excel-back-up van objecten */
+.objectBackupBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  margin:0 0 14px;
+  padding:16px 18px;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+.objectBackupBar > div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.objectBackupBar strong{color:#172033}
+.objectBackupBar span{
+  color:#64748b;
+  font-size:13px;
+}
+.objectBackupBar button{white-space:nowrap}
+@media(max-width:700px){
+  .objectBackupBar{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .objectBackupBar button{width:100%}
+}

@@ -3598,6 +3598,167 @@ async function deleteInspection(id){
 }
 
 
+function excelXmlEscape(value){
+  return String(value??'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&apos;');
+}
+function excelCell(value,type='String',style=''){
+  const styleAttr=style?` ss:StyleID="${style}"`:'';
+  if(value===null||value===undefined||value==='') return `<Cell${styleAttr}><Data ss:Type="String"></Data></Cell>`;
+  if(type==='Number'){
+    const number=Number(value);
+    if(Number.isFinite(number)) return `<Cell${styleAttr}><Data ss:Type="Number">${number}</Data></Cell>`;
+  }
+  return `<Cell${styleAttr}><Data ss:Type="String">${excelXmlEscape(value)}</Data></Cell>`;
+}
+function objectBackupRows(){
+  return [...vastgoedData].sort(compareObjectAddress).map(r=>{
+    const scope10=objectInspectionSummary(r.id,'SCOPE 10');
+    const scope12=objectInspectionSummary(r.id,'SCOPE 12');
+    return [
+      r.id,
+      r.object,
+      r.straatnaam,
+      r.huisnummer,
+      r.postcode,
+      r.stad,
+      r.type,
+      r.status,
+      r.huurder==='-'?'':r.huurder,
+      r.email,
+      r.telefoon,
+      r.huur_pm,
+      r.huur_pj,
+      r.servicekosten,
+      r.waarborgsom,
+      r.aankoopwaarde,
+      r.woz_waarde,
+      r.hypotheek,
+      r.hypotheekrente,
+      r.aankoopdatum,
+      r.bruto_rendement===null?'':r.bruto_rendement,
+      r.energielabel==='-'?'':r.energielabel,
+      r.energielabel_geldig_tot,
+      scope10.date==='-'?'':scope10.date,
+      scope10.status?.[0]||'',
+      scope12.date==='-'?'':scope12.date,
+      scope12.status?.[0]||'',
+      r.startdatum_contract,
+      r.contract_onbepaalde?'Onbepaalde tijd':r.oorspronkelijke_einddatum_contract,
+      r.einddatum_contract,
+      r.opzegtermijn_maanden,
+      r.opzegdatum,
+      r.verlenging_jaren,
+      r.aantal_verlengingen,
+      r.contract_status,
+      r.maand_huurverhoging,
+      r.onderhoud_titel,
+      r.scope_inspectie_geldig_tot,
+      r.onderhoud_status,
+      r.onderhoud_kosten,
+      r.onderhoud_prioriteit
+    ];
+  });
+}
+function downloadObjectBackup(){
+  const message=el('objectBackupMessage');
+  const button=el('downloadObjectBackupBtn');
+  if(!vastgoedData.length){
+    if(message) message.textContent='Er zijn geen objecten om te exporteren.';
+    return;
+  }
+
+  if(button) button.disabled=true;
+  if(message) message.textContent='Excel-back-up wordt gemaakt...';
+
+  try{
+    const headers=[
+      'Object-ID','Objectnaam','Straatnaam','Huisnummer','Postcode','Stad','Type object','Objectstatus',
+      'Huurder','E-mail huurder','Telefoon huurder','Huur per maand','Huur per jaar','Servicekosten',
+      'Waarborgsom','Aankoopwaarde','WOZ-waarde','Hypotheekschuld','Hypotheekrente (%)','Aankoopdatum',
+      'Bruto rendement (%)','Energielabel','Energielabel geldig tot','SCOPE 10 geldig / volgende',
+      'Status SCOPE 10','SCOPE 12 geldig / volgende','Status SCOPE 12','Startdatum contract',
+      'Oorspronkelijke einddatum','Huidige einddatum','Opzegtermijn (maanden)','Uiterste opzegdatum',
+      'Verlenging (jaren)','Aantal verlengingen','Contractstatus','Maand huurverhoging',
+      'Onderhoudstype','Onderhoudsdatum','Onderhoudsstatus','Onderhoudskosten','Onderhoudsprioriteit'
+    ];
+    const numericColumns=new Set([11,12,13,14,15,16,17,18,20,30,32,33,39]);
+    const moneyColumns=new Set([11,12,13,14,15,16,17,39]);
+    const percentColumns=new Set([18,20]);
+    const rows=objectBackupRows();
+
+    const headerXml=headers.map(value=>excelCell(value,'String','Header')).join('');
+    const rowsXml=rows.map(row=>`<Row>${row.map((value,index)=>{
+      const style=moneyColumns.has(index)?'Money':percentColumns.has(index)?'Percent':'';
+      return excelCell(value,numericColumns.has(index)?'Number':'String',style);
+    }).join('')}</Row>`).join('');
+
+    const generatedAt=new Date();
+    const generatedText=generatedAt.toLocaleString('nl-NL');
+    const xml=`<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Author>Vastgoed-dashboard</Author>
+  <Created>${generatedAt.toISOString()}</Created>
+ </DocumentProperties>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Bottom"/><Font ss:FontName="Calibri" ss:Size="11"/></Style>
+  <Style ss:ID="Title"><Font ss:Bold="1" ss:Size="15"/><Interior ss:Color="#E8EEF7" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="Header"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#172033" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="Money"><NumberFormat ss:Format="€ #,##0.00"/></Style>
+  <Style ss:ID="Percent"><NumberFormat ss:Format="0.00"/></Style>
+ </Styles>
+ <Worksheet ss:Name="Objecten">
+  <Table>
+   <Column ss:Width="145"/><Column ss:Width="145"/><Column ss:Width="120"/><Column ss:Width="75"/><Column ss:Width="85"/><Column ss:Width="100"/>
+   <Row ss:Height="28">${headerXml}</Row>
+   ${rowsXml}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
+   <Selected/>
+  </WorksheetOptions>
+  <AutoFilter x:Range="R1C1:R${rows.length+1}C${headers.length}" xmlns="urn:schemas-microsoft-com:office:excel"/>
+ </Worksheet>
+ <Worksheet ss:Name="Back-upinformatie">
+  <Table>
+   <Column ss:Width="180"/><Column ss:Width="280"/>
+   <Row><Cell ss:StyleID="Title"><Data ss:Type="String">Back-upinformatie</Data></Cell><Cell ss:StyleID="Title"><Data ss:Type="String"></Data></Cell></Row>
+   <Row>${excelCell('Gemaakt op')}${excelCell(generatedText)}</Row>
+   <Row>${excelCell('Aantal objecten')}${excelCell(rows.length,'Number')}</Row>
+   <Row>${excelCell('Bron')}${excelCell('Vastgoed-dashboard')}</Row>
+   <Row>${excelCell('Opmerking')}${excelCell('Deze back-up bevat alle objecten die op het moment van downloaden in het dashboard stonden.')}</Row>
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    const date=generatedAt.toISOString().slice(0,10);
+    link.href=url;
+    link.download=`vastgoed-objecten-backup-${date}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    if(message) message.textContent=`Back-up gedownload: ${rows.length} objecten.`;
+  }catch(error){
+    console.error(error);
+    if(message) message.textContent=`Back-up maken mislukt: ${error.message}`;
+  }finally{
+    if(button) button.disabled=false;
+  }
+}
+
 function sortedUnique(values){
   return [...new Set(values.map(value=>clean(value)).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base',numeric:true}));
@@ -4220,6 +4381,7 @@ function init(){
   el('serviceFinalAdvance')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceFinalActual')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceCostLetterBtn')?.addEventListener('click',openServiceCostLetter);
+  el('downloadObjectBackupBtn')?.addEventListener('click',downloadObjectBackup);
   el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); });
   el('brandingForm').addEventListener('submit',saveBranding);
   el('resetBrandingBtn').addEventListener('click',resetBranding);
