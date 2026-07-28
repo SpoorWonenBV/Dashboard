@@ -4203,7 +4203,9 @@ function renderDetail(id){
 }
 function kv(label,value){return `<div class="kv"><span>${label}</span><strong>${value}</strong></div>`}
 function openNewProperty(){ selectedPropertyId=null; el('modalTitle').textContent='Nieuw object'; el('propertyForm').reset(); ['propertyId','tenantId','contractId','maintenanceId'].forEach(id=>el(id).value=''); el('propertyStatus').value='Actief'; el('contractStatus').value='Actief'; if(el('contractNoticePeriodMonths')) el('contractNoticePeriodMonths').value='12'; if(el('contractNoticeDate')) el('contractNoticeDate').dataset.autoCalculated='true'; if(el('contractRenewalPeriodYears')) el('contractRenewalPeriodYears').value=''; el('maintenanceStatus').value='Te plannen'; el('maintenancePriority').value='Normaal'; if(el('propertyPhotoFile')) el('propertyPhotoFile').value=''; el('deletePropertyBtn').classList.add('hidden'); el('formMessage').textContent=''; el('propertyModal').classList.remove('hidden'); }
-function openEditProperty(id){ const r=vastgoedData.find(x=>x.id===id); if(!r)return; const p=r.property,c=r.contract||{},t=r.tenant||{},m=r.maintenance||{}; el('modalTitle').textContent='Object bewerken'; el('propertyId').value=p.id||''; el('tenantId').value=t.id||''; el('contractId').value=c.id||''; el('maintenanceId').value=m.id||''; el('propertyName').value=p.name||''; el('propertyAddress').value=p.address||''; el('propertyHouseNumber').value=p.house_number||''; el('propertyPostalCode').value=p.postal_code||''; el('propertyCity').value=p.city||''; el('propertyType').value=p.property_type||''; el('propertyStatus').value=p.status||'Actief'; el('propertyMonthlyRent').value=p.monthly_rent||''; el('propertyYearlyRent').value=p.yearly_rent||''; el('propertyServiceCosts').value=p.service_costs||''; el('propertyDeposit').value=p.deposit||''; el('propertyEnergyLabel').value=p.energy_label||''; el('propertyEnergyValidUntil').value=p.energy_label_valid_until||''; el('propertyRentIncreaseMonth').value=p.rent_increase_month||''; el('propertyScopeValidUntil').value=p.scope_valid_until||''; if(el('propertyPurchaseValue')) el('propertyPurchaseValue').value=p.purchase_value||''; if(el('propertyWozValue')) el('propertyWozValue').value=p.woz_value||''; if(el('propertyMortgageValue')) el('propertyMortgageValue').value=p.mortgage_value||''; if(el('propertyMortgageInterest')) el('propertyMortgageInterest').value=p.mortgage_interest||''; if(el('propertyPurchaseDate')) el('propertyPurchaseDate').value=p.purchase_date||''; if(el('propertyPhotoUrl')) el('propertyPhotoUrl').value=p.photo_url||''; if(el('propertyPhotoFile')) el('propertyPhotoFile').value=''; el('tenantName').value=t.name||''; el('tenantEmail').value=t.email||''; el('tenantPhone').value=t.phone||''; el('contractStartDate').value=c.start_date||''; el('contractEndDate').value=c.end_date||''; if(el('contractNoticePeriodMonths')) el('contractNoticePeriodMonths').value=c.notice_period_months??''; el('contractNoticeDate').value=c.notice_date||r.contract_timeline?.calculatedInitialNotice||''; el('contractNoticeDate').dataset.autoCalculated=c.notice_date?'false':'true'; if(el('contractRenewalPeriodYears')) el('contractRenewalPeriodYears').value=c.renewal_period_years??''; el('contractStatus').value=canonicalContractStatus(c.status); el('maintenanceTitle').value=m.title||''; el('maintenancePlannedDate').value=m.planned_date||''; el('maintenanceCost').value=m.cost||''; el('maintenancePriority').value=m.priority||'Normaal'; el('maintenanceStatus').value=maintenanceStatusLabel(m.status); el('maintenanceDescription').value=m.description||''; el('deletePropertyBtn').classList.remove('hidden'); el('formMessage').textContent=''; el('propertyModal').classList.remove('hidden'); }
+function openEditProperty(id){ const r=vastgoedData.find(x=>x.id===id); if(!r)return; const p=r.property,c=r.contract||{},t=r.tenant||{},m=r.maintenance||{}; el('modalTitle').textContent='Object bewerken'; el('propertyId').value=p.id||''; el('tenantId').value=t.id||''; el('contractId').value=c.id||''; el('maintenanceId').value=m.id||''; el('propertyName').value=p.name||''; el('propertyAddress').value=p.address||''; el('propertyHouseNumber').value=p.house_number||''; el('propertyPostalCode').value=p.postal_code||''; el('propertyCity').value=p.city||''; el('propertyType').value=p.property_type||''; el('propertyStatus').value=p.status||'Actief'; el('propertyMonthlyRent').value=p.monthly_rent||''; el('propertyYearlyRent').value=p.yearly_rent||''; el('propertyServiceCosts').value=p.service_costs||''; el('propertyDeposit').value=p.deposit||''; el('propertyEnergyLabel').value=p.energy_label||''; el('propertyEnergyValidUntil').value=p.energy_label_valid_until||''; el('propertyRentIncreaseMonth').value=p.rent_increase_month||'';
+  const scope10Inspection=inspectionsForProperty(r.id,'SCOPE 10')[0];
+  el('propertyScopeValidUntil').value=inspectionDeadline(scope10Inspection)||p.scope_valid_until||''; if(el('propertyPurchaseValue')) el('propertyPurchaseValue').value=p.purchase_value||''; if(el('propertyWozValue')) el('propertyWozValue').value=p.woz_value||''; if(el('propertyMortgageValue')) el('propertyMortgageValue').value=p.mortgage_value||''; if(el('propertyMortgageInterest')) el('propertyMortgageInterest').value=p.mortgage_interest||''; if(el('propertyPurchaseDate')) el('propertyPurchaseDate').value=p.purchase_date||''; if(el('propertyPhotoUrl')) el('propertyPhotoUrl').value=p.photo_url||''; if(el('propertyPhotoFile')) el('propertyPhotoFile').value=''; el('tenantName').value=t.name||''; el('tenantEmail').value=t.email||''; el('tenantPhone').value=t.phone||''; el('contractStartDate').value=c.start_date||''; el('contractEndDate').value=c.end_date||''; if(el('contractNoticePeriodMonths')) el('contractNoticePeriodMonths').value=c.notice_period_months??''; el('contractNoticeDate').value=c.notice_date||r.contract_timeline?.calculatedInitialNotice||''; el('contractNoticeDate').dataset.autoCalculated=c.notice_date?'false':'true'; if(el('contractRenewalPeriodYears')) el('contractRenewalPeriodYears').value=c.renewal_period_years??''; el('contractStatus').value=canonicalContractStatus(c.status); el('maintenanceTitle').value=m.title||''; el('maintenancePlannedDate').value=m.planned_date||''; el('maintenanceCost').value=m.cost||''; el('maintenancePriority').value=m.priority||'Normaal'; el('maintenanceStatus').value=maintenanceStatusLabel(m.status); el('maintenanceDescription').value=m.description||''; el('deletePropertyBtn').classList.remove('hidden'); el('formMessage').textContent=''; el('propertyModal').classList.remove('hidden'); }
 window.openEditProperty=openEditProperty;
 function closeModal(){ el('propertyModal').classList.add('hidden'); }
 const numOrNull=v=>v===''||v===null?null:Number(v);
@@ -4229,11 +4231,40 @@ async function uploadPropertyPhoto(propertyId, file){
   return path;
 }
 
+async function syncScope10InspectionFromProperty(propertyId,validUntil){
+  if(!inspectionsSetupReady) return;
+
+  const existing=inspectionsForProperty(propertyId,'SCOPE 10')[0]||null;
+  const normalizedDate=validUntil||null;
+  const payload={
+    property_id:propertyId,
+    inspection_type:'SCOPE 10',
+    valid_until:normalizedDate,
+    next_inspection_date:null,
+    status:normalizedDate?'Geldig':'Nog te plannen',
+    updated_at:new Date().toISOString()
+  };
+
+  const result=existing
+    ? await sb.from('property_inspections').update(payload).eq('id',existing.id)
+    : normalizedDate
+      ? await sb.from('property_inspections').insert(payload)
+      : {error:null};
+
+  if(result.error) throw result.error;
+}
+
 async function saveProperty(e){
   e.preventDefault(); el('formMessage').textContent='Bezig met opslaan...';
   const propertyId=el('propertyId').value, tenantId=el('tenantId').value, contractId=el('contractId').value, maintenanceId=el('maintenanceId').value;
   const propertyPayload={name:el('propertyName').value,address:el('propertyAddress').value||null,house_number:el('propertyHouseNumber').value||null,postal_code:clean(el('propertyPostalCode').value).toUpperCase()||null,city:el('propertyCity').value||null,property_type:el('propertyType').value||null,status:el('propertyStatus').value||'Actief',monthly_rent:numOrNull(el('propertyMonthlyRent').value),yearly_rent:numOrNull(el('propertyYearlyRent').value),service_costs:numOrNull(el('propertyServiceCosts').value),deposit:numOrNull(el('propertyDeposit').value),energy_label:el('propertyEnergyLabel').value||null,energy_label_valid_until:el('propertyEnergyValidUntil').value||null,rent_increase_month:el('propertyRentIncreaseMonth').value||null,scope_valid_until:el('propertyScopeValidUntil').value||null,purchase_value:numOrNull(el('propertyPurchaseValue')?.value||''),woz_value:numOrNull(el('propertyWozValue')?.value||''),mortgage_value:numOrNull(el('propertyMortgageValue')?.value||''),mortgage_interest:numOrNull(el('propertyMortgageInterest')?.value||''),purchase_date:el('propertyPurchaseDate')?.value||null,photo_url:el('propertyPhotoUrl')?.value||null};
   const propRes=await upsertEntity('properties',propertyId,propertyPayload); if(propRes.error){el('formMessage').textContent=propRes.error.message;return;} const savedProperty=propRes.data;
+  try{
+    await syncScope10InspectionFromProperty(savedProperty.id,el('propertyScopeValidUntil').value||null);
+  }catch(error){
+    el('formMessage').textContent='Object is opgeslagen, maar SCOPE 10 kon niet worden bijgewerkt: '+error.message;
+    return;
+  }
   const photoFile = el('propertyPhotoFile')?.files?.[0];
   if(photoFile){ try{ const photoPath = await uploadPropertyPhoto(savedProperty.id, photoFile); savedProperty.photo_url = photoPath; } catch(error){ el('formMessage').textContent='Foto uploaden mislukt: '+error.message; return; } }
   let savedTenant=null; if(el('tenantName').value.trim()){ const tenantPayload={name:el('tenantName').value.trim(),email:el('tenantEmail').value||null,phone:el('tenantPhone').value||null}; const tenRes=await upsertEntity('tenants',tenantId,tenantPayload); if(tenRes.error){el('formMessage').textContent=tenRes.error.message;return;} savedTenant=tenRes.data; }
