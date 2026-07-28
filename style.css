@@ -1259,3 +1259,49 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   opacity:.6;
   cursor:wait;
 }
+
+
+/* v40.13: filters voor Objecten en Contracten */
+.pageFilters{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(150px,1fr)) auto;
+  gap:12px;
+  align-items:end;
+  margin:0 0 18px;
+  padding:16px;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+.pageFilters label{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin:0;
+  color:#475569;
+  font-size:12px;
+  font-weight:800;
+}
+.pageFilters select{
+  min-height:42px;
+  width:100%;
+  padding:8px 34px 8px 11px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  color:#1e293b;
+  font:inherit;
+  font-size:14px;
+}
+.pageFilters .clearPageFiltersBtn{
+  min-height:42px;
+  white-space:nowrap;
+}
+@media(max-width:1100px){
+  .pageFilters{grid-template-columns:repeat(2,minmax(150px,1fr))}
+}
+@media(max-width:650px){
+  .pageFilters{grid-template-columns:1fr}
+  .pageFilters .clearPageFiltersBtn{width:100%}
+}

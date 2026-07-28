@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
+let sb, query = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
   if(!s) return '-';
@@ -3598,6 +3598,113 @@ async function deleteInspection(id){
 }
 
 
+function sortedUnique(values){
+  return [...new Set(values.map(value=>clean(value)).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base',numeric:true}));
+}
+function objectIsVacant(row){
+  return String(row.status||'').toLowerCase().includes('leeg')||
+    !clean(row.huurder)||
+    clean(row.huurder)==='-';
+}
+function filteredObjectsForPage(data){
+  return data.filter(row=>{
+    if(objectCityFilter&&clean(row.stad)!==objectCityFilter) return false;
+    if(objectTypeFilter&&clean(row.type)!==objectTypeFilter) return false;
+    if(objectStatusFilter&&clean(row.status)!==objectStatusFilter) return false;
+    if(objectOccupancyFilter==='rented'&&objectIsVacant(row)) return false;
+    if(objectOccupancyFilter==='vacant'&&!objectIsVacant(row)) return false;
+    return true;
+  });
+}
+function contractNoticeCategory(row){
+  if(!row.contract?.id) return 'none';
+  if(row.contract_opgezegd) return 'terminated';
+  if(row.contract_onbepaalde) return 'indefinite';
+  const days=row.contract_timeline?.noticeDays;
+  if(days===null||days===undefined) return 'missing';
+  if(days<0) return 'passed';
+  if(days<=90) return '90';
+  if(days<=365) return '365';
+  return 'later';
+}
+function filteredContractsForPage(data){
+  return data.filter(row=>{
+    if(contractCityFilter&&clean(row.stad)!==contractCityFilter) return false;
+    if(contractStateFilter==='active'&&(!row.contract?.id||row.contract_opgezegd)) return false;
+    if(contractStateFilter==='terminated'&&!row.contract_opgezegd) return false;
+    if(contractStateFilter==='none'&&row.contract?.id) return false;
+    if(contractDurationFilter==='fixed'&&(!row.contract?.id||row.contract_onbepaalde)) return false;
+    if(contractDurationFilter==='indefinite'&&(!row.contract?.id||!row.contract_onbepaalde)) return false;
+    if(contractNoticeFilter&&contractNoticeCategory(row)!==contractNoticeFilter) return false;
+    return true;
+  });
+}
+function renderObjectFilters(data){
+  const target=el('objectFilters');
+  if(!target) return;
+  const cities=sortedUnique(data.map(row=>row.stad));
+  const types=sortedUnique(data.map(row=>row.type));
+  const statuses=sortedUnique(data.map(row=>row.status));
+  target.innerHTML=`<div class="pageFilters">
+    <label>Stad<select id="objectCityFilter"><option value="">Alle steden</option>${cities.map(value=>`<option value="${escAttr(value)}" ${objectCityFilter===value?'selected':''}>${escHtml(value)}</option>`).join('')}</select></label>
+    <label>Type object<select id="objectTypeFilter"><option value="">Alle typen</option>${types.map(value=>`<option value="${escAttr(value)}" ${objectTypeFilter===value?'selected':''}>${escHtml(value)}</option>`).join('')}</select></label>
+    <label>Status<select id="objectStatusFilter"><option value="">Alle statussen</option>${statuses.map(value=>`<option value="${escAttr(value)}" ${objectStatusFilter===value?'selected':''}>${escHtml(value)}</option>`).join('')}</select></label>
+    <label>Bezetting<select id="objectOccupancyFilter">
+      <option value="">Verhuurd en leegstaand</option>
+      <option value="rented" ${objectOccupancyFilter==='rented'?'selected':''}>Alleen verhuurd</option>
+      <option value="vacant" ${objectOccupancyFilter==='vacant'?'selected':''}>Alleen leegstaand</option>
+    </select></label>
+    <button class="secondaryBtn clearPageFiltersBtn" type="button" data-filter-page="objects">Filters wissen</button>
+  </div>`;
+}
+function renderContractFilters(data){
+  const target=el('contractFilters');
+  if(!target) return;
+  const cities=sortedUnique(data.map(row=>row.stad));
+  target.innerHTML=`<div class="pageFilters">
+    <label>Stad<select id="contractCityFilter"><option value="">Alle steden</option>${cities.map(value=>`<option value="${escAttr(value)}" ${contractCityFilter===value?'selected':''}>${escHtml(value)}</option>`).join('')}</select></label>
+    <label>Contractstatus<select id="contractStateFilter">
+      <option value="">Alle contractstatussen</option>
+      <option value="active" ${contractStateFilter==='active'?'selected':''}>Actief</option>
+      <option value="terminated" ${contractStateFilter==='terminated'?'selected':''}>Opgezegd</option>
+      <option value="none" ${contractStateFilter==='none'?'selected':''}>Geen contract</option>
+    </select></label>
+    <label>Looptijd<select id="contractDurationFilter">
+      <option value="">Bepaalde en onbepaalde tijd</option>
+      <option value="fixed" ${contractDurationFilter==='fixed'?'selected':''}>Bepaalde tijd</option>
+      <option value="indefinite" ${contractDurationFilter==='indefinite'?'selected':''}>Onbepaalde tijd</option>
+    </select></label>
+    <label>Opzegmoment<select id="contractNoticeFilter">
+      <option value="">Alle opzegmomenten</option>
+      <option value="90" ${contractNoticeFilter==='90'?'selected':''}>Binnen 90 dagen</option>
+      <option value="365" ${contractNoticeFilter==='365'?'selected':''}>Binnen 12 maanden</option>
+      <option value="later" ${contractNoticeFilter==='later'?'selected':''}>Later dan 12 maanden</option>
+      <option value="passed" ${contractNoticeFilter==='passed'?'selected':''}>Opzegmoment verstreken</option>
+      <option value="indefinite" ${contractNoticeFilter==='indefinite'?'selected':''}>Onbepaalde tijd</option>
+      <option value="terminated" ${contractNoticeFilter==='terminated'?'selected':''}>Contract opgezegd</option>
+      <option value="missing" ${contractNoticeFilter==='missing'?'selected':''}>Datum ontbreekt</option>
+      <option value="none" ${contractNoticeFilter==='none'?'selected':''}>Geen contract</option>
+    </select></label>
+    <button class="secondaryBtn clearPageFiltersBtn" type="button" data-filter-page="contracts">Filters wissen</button>
+  </div>`;
+}
+function clearPageFilters(page){
+  if(page==='objects'){
+    objectCityFilter='';
+    objectTypeFilter='';
+    objectStatusFilter='';
+    objectOccupancyFilter='';
+  }
+  if(page==='contracts'){
+    contractStateFilter='';
+    contractDurationFilter='';
+    contractNoticeFilter='';
+    contractCityFilter='';
+  }
+  render();
+}
+
 function renderContractOverview(data){
   const contracts=data.filter(r=>r.contract?.id);
   const activeContracts=contracts.filter(r=>!r.contract_opgezegd);
@@ -3817,6 +3924,10 @@ function agendaToday(){
 
 function render(){
   const data=filtered(), notes=notificationItems(data);
+  const objectPageData=filteredObjectsForPage(data);
+  const contractPageData=filteredContractsForPage(data);
+  renderObjectFilters(data);
+  renderContractFilters(data);
   renderCharts(data);
   el('totalObjects').textContent=data.length;
   el('totalMonthlyRent').textContent=euro(data.reduce((a,b)=>a+Number(b.huur_pm||0),0));
@@ -3828,12 +3939,12 @@ function render(){
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=notes.map(actionHtml).join('') || '<p>Geen meldingen gevonden.</p>';
-  el('objectGrid').innerHTML=data.map(r=>`<article class="objectCard">${photoBox(r.foto_url,'objectPhoto',`Foto van ${r.object}`)}<h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
+  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard">${photoBox(r.foto_url,'objectPhoto',`Foto van ${r.object}`)}<h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
   refreshPhotos();
-  renderContractOverview(data);
+  renderContractOverview(contractPageData);
   renderFinancialPage(data);
   renderAgenda(data);
-  el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Oorspr. einddatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+data.map(r=>{
+  el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Oorspr. einddatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+contractPageData.map(r=>{
     const originalEnd=r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract);
     const renewalCount=r.aantal_verlengingen?`<span class="subtle">${r.aantal_verlengingen}× toegepast</span>`:'';
     const mismatch=r.opzegdatum_afwijking?`<span class="contractWarning">Wijkt af van berekende datum</span>`:'';
@@ -4042,11 +4153,23 @@ function init(){
     if(newInspectionForObject) openInspectionModal('',newInspectionForObject.dataset.id||'');
     if(e.target.closest('#newInspectionBtn')) openInspectionModal();
   });
+  document.body.addEventListener('click',e=>{
+    const clearButton=e.target.closest('.clearPageFiltersBtn');
+    if(clearButton) clearPageFilters(clearButton.dataset.filterPage);
+  });
   el('loginBtn').addEventListener('click', async()=>{ el('loginError').textContent='Bezig met inloggen...'; const email=el('email').value.trim(); const password=el('password').value; const remember=Boolean(el('rememberLogin')?.checked); try{localStorage.setItem(REMEMBER_LOGIN_KEY,String(remember));}catch(error){} if(!remember) clearPersistedSupabaseSession(); const {data,error}=await sb.auth.signInWithPassword({email,password}); if(error){ el('loginError').textContent='Inloggen mislukt: '+error.message; return;} initializeSessionSecurity(data.session,{freshLogin:true}); el('loginError').textContent=''; showApp(); await loadBranding(); await loadData(); });
   el('password').addEventListener('keydown', e=>{ if(e.key==='Enter') el('loginBtn').click(); });
   el('logoutBtn').addEventListener('click',()=>secureLogout('Je bent veilig uitgelogd.'));
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{
+    if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
+    if(e.target.id==='objectTypeFilter'){ objectTypeFilter=e.target.value; render(); }
+    if(e.target.id==='objectStatusFilter'){ objectStatusFilter=e.target.value; render(); }
+    if(e.target.id==='objectOccupancyFilter'){ objectOccupancyFilter=e.target.value; render(); }
+    if(e.target.id==='contractCityFilter'){ contractCityFilter=e.target.value; render(); }
+    if(e.target.id==='contractStateFilter'){ contractStateFilter=e.target.value; render(); }
+    if(e.target.id==='contractDurationFilter'){ contractDurationFilter=e.target.value; render(); }
+    if(e.target.id==='contractNoticeFilter'){ contractNoticeFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceObjectFilter'){ maintenanceObjectFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); }
