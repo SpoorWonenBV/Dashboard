@@ -1828,8 +1828,10 @@ async function applyBranding(next={}){
     setImage('sidebarLogo',logoUrl,{cleanBackground:true}),
     setImage('previewLogo',logoUrl,{cleanBackground:true})
   ]);
+  // Het app-icoon en favicon blijven bewust vast.
+  // iPadOS kan anders tijdens 'Zet op beginscherm' overschakelen naar een branding-afbeelding.
   const fav=el('faviconLink');
-  if(fav) fav.href=faviconUrl||'data:,';
+  if(fav) fav.href='/favicon-32x32.png?v=40-22';
 
   if(el('previewCompanyName')) el('previewCompanyName').textContent=branding.company_name;
   if(el('previewDashboardName')) el('previewDashboardName').textContent=branding.dashboard_name;
