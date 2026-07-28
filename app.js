@@ -805,7 +805,7 @@ function createRentLetterHtml(data){
     .toolbar{width:210mm;margin:18px auto 0;display:flex;align-items:center;gap:12px;padding:0 2mm}
     .printButton{padding:10px 14px;border:0;border-radius:8px;background:#172033;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer}
     .conceptNotice{font:13px Arial,sans-serif;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px}
-    .sheet{width:210mm;min-height:297mm;margin:12px auto 28px;background:#fff;padding:25.4mm 19.05mm;box-shadow:0 18px 55px rgba(15,23,42,.16)}
+    .sheet{width:210mm;min-height:297mm;margin:12px auto 28px;background:#fff;padding:40mm 19.05mm 20mm;box-shadow:0 18px 55px rgba(15,23,42,.16)}
     .recipient{min-height:15.1mm;line-height:5.05mm}
     .subject{display:grid;grid-template-columns:25mm 1fr;column-gap:3mm;margin-top:25.2mm;line-height:5.05mm}
     .greeting{margin:15.1mm 0 0}
@@ -825,11 +825,12 @@ function createRentLetterHtml(data){
     .calculation .finalDescription{font-weight:700;font-style:italic}
     .blankRow{grid-column:1 / 5;min-height:5.05mm}
     .overrideNote{margin-top:6mm;padding:3mm;border:1px solid #aaa;font-size:9.5pt;line-height:1.35}
-    @page{size:A4 portrait;margin:25.4mm 19.05mm}
+    @page{size:A4 portrait;margin:0}
     @media print{
+      html,body{width:210mm;min-height:297mm;background:#fff}
       body{background:#fff}
       .toolbar{display:none!important}
-      .sheet{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+      .sheet{width:210mm;min-height:297mm;margin:0;padding:40mm 19.05mm 20mm;box-shadow:none}
     }
   </style></head><body>
     <div class="toolbar"><button class="printButton" onclick="window.print()">Afdrukken / opslaan als PDF</button><div class="conceptNotice"><strong>Concept:</strong> controleer de brief. Er wordt niets automatisch verzonden.</div></div>
