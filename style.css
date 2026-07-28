@@ -1338,3 +1338,22 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   }
   .objectBackupBar button{width:100%}
 }
+
+
+/* v40.18: duidelijke indeling van Object bewerken */
+.propertyFormSection{
+  margin:0 0 22px;
+  padding:0 0 20px;
+  border-bottom:1px solid #e2e8f0;
+}
+.propertyFormSection:last-of-type{
+  margin-bottom:10px;
+}
+.propertyFormSection h3{
+  margin:0 0 14px;
+  color:#0f172a;
+  font-size:17px;
+}
+.propertyFormSection .formGrid{
+  margin-bottom:0;
+}
