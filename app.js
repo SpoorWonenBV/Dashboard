@@ -815,11 +815,12 @@ function createRentLetterHtml(data){
   const oldPeriod=longMonthYear(`${data.old_period}-01`);
   const newPeriod=longMonthYear(`${data.new_period}-01`);
   const recipientAddress=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
-  const recipientCity=clean(r.stad);
+  const recipientCity=[r.postcode,r.stad].filter(Boolean).join(' ');
+  const subjectCity=clean(r.stad);
   const recipientAddressLine=recipientAddress||clean(r.object)||'-';
   const subjectAddress=recipientAddress
-    ? `${recipientAddress}${recipientCity?` te ${recipientCity}`:''}`
-    : (clean(r.object)||recipientCity||'-');
+    ? `${recipientAddress}${subjectCity?` te ${subjectCity}`:''}`
+    : (clean(r.object)||subjectCity||'-');
 
   const manualOverride=Number.isFinite(Number(data.calculated_rent))
     && Math.abs(finalTotal-Number(data.calculated_rent))>0.01;
