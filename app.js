@@ -519,6 +519,17 @@ function rentIncreaseEffectiveDate(r){
   return target;
 }
 
+function rentIncreaseAppliesDuringContract(r,effectiveDate=rentIncreaseEffectiveDate(r)){
+  if(!r?.contract?.id||!effectiveDate) return false;
+  if(!r.contract_opgezegd) return true;
+
+  // Een opgezegd contract loopt door tot de einddatum. Een huurverhoging
+  // vóór of op die einddatum blijft daarom van toepassing.
+  const contractEnd=r.einddatum_contract||r.oorspronkelijke_einddatum_contract||r.contract?.end_date||null;
+  if(!contractEnd) return false;
+  return String(effectiveDate).slice(0,10)<=String(contractEnd).slice(0,10);
+}
+
 function rentReferencePeriods(effectiveDate){
   return {
     newDate:shiftIsoMonths(effectiveDate,-RENT_REFERENCE_OFFSET_MONTHS),
@@ -552,8 +563,8 @@ function rentRowContext(r){
 function rentContextStatus(context){
   const {r,effectiveDate,newCpi,oldCpi,proposal}=context;
   if(!r.contract?.id) return ['Geen contract','danger'];
-  if(r.contract_opgezegd) return ['Contract opgezegd','warning'];
   if(!r.maand_huurverhoging) return ['Maand ontbreekt','warning'];
+  if(r.contract_opgezegd&&!rentIncreaseAppliesDuringContract(r,effectiveDate)) return ['Eindigt vóór verhoging','warning'];
   if(!Number(r.huur_pm)) return ['Huur ontbreekt','danger'];
   if(proposal?.status==='Verwerkt') return ['Verwerkt','ok'];
   if(proposal?.status==='Goedgekeurd') return ['Goedgekeurd','ok'];
@@ -561,6 +572,7 @@ function rentContextStatus(context){
   if(!effectiveDate) return ['Controle nodig','warning'];
   if(!newCpi||!oldCpi) return ['CBS-cijfer ontbreekt','warning'];
   if(newCpi.provisional||oldCpi.provisional) return ['Voorlopig CBS-cijfer','warning'];
+  if(r.contract_opgezegd) return ['Opgezegd, loopt door','warning'];
   return ['Klaar voor concept','ok'];
 }
 
@@ -568,7 +580,7 @@ function renderFinancialOverview(data){
   const overview=el('financialOverview');
   const table=el('rentIncreaseTable');
   if(!overview||!table) return;
-  const eligible=data.filter(r=>r.contract?.id&&!r.contract_opgezegd);
+  const eligible=data.filter(r=>r.contract?.id&&rentIncreaseAppliesDuringContract(r));
   const contexts=eligible.map(rentRowContext);
   const today=isoToday();
   const soon=contexts.filter(c=>{const d=daysUntil(c.effectiveDate);return d!==null&&d>=0&&d<=90;}).length;
@@ -608,7 +620,7 @@ function renderFinancialOverview(data){
         <td>${statusBadge(status)}</td>
         <td><div class="financialActionGroup"><button class="miniLink rentEditBtn" data-id="${r.id}" data-date="${effectiveDate||''}">${actionLabel}</button>${proposal?`<button class="miniLink rentQuickLetterBtn" data-id="${r.id}" data-date="${effectiveDate}">Conceptbrief</button>`:''}</div></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8">Geen actieve contracten gevonden.</td></tr>';
+    }).join('') || '<tr><td colspan="8">Geen contracten met een toepasselijke huurverhoging gevonden.</td></tr>';
 
   if(!rentIncreaseSetupReady){
     overview.insertAdjacentHTML('afterbegin','<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand uit. Daarna kunnen concepten en huurhistorie veilig worden opgeslagen.</span></div>');
@@ -1332,8 +1344,8 @@ function buildEmailNotificationEvents(data,settings,referenceIso=isoToday()){
     if(r.energielabel_geldig_tot){
       add({rule:'energy_label',date:r.energielabel_geldig_tot,title:'Energielabel verloopt',object:r.object,objectId:r.id,detail:objectText});
     }
-    const rentDate=r.contract?.id&&!r.contract_opgezegd?rentIncreaseEffectiveDate(r):null;
-    if(rentDate){
+    const rentDate=r.contract?.id?rentIncreaseEffectiveDate(r):null;
+    if(rentDate&&rentIncreaseAppliesDuringContract(r,rentDate)){
       add({rule:'rent_increase',date:rentDate,title:'Huurverhoging',object:r.object,objectId:r.id,detail:objectText});
     }
   });
