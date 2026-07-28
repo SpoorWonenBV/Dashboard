@@ -3305,7 +3305,7 @@ function propertyEnergyLabelInspectionRows(data){
       inspection_company:null,
       certificate_number:clean(property.energielabel)&&property.energielabel!=='-'?`Label ${property.energielabel}`:null,
       cost:0,
-      notes:'Automatisch overgenomen uit de objectgegevens.',
+      notes:null,
       document_path:null,
       document_name:null,
       derived_from_property:true
@@ -3346,7 +3346,7 @@ function inspectionRowTable(rows){
       const docButton=row.document_path
         ? `<button class="miniLink openInspectionDocBtn" data-path="${escAttr(row.document_path)}">Open document</button>`
         : '-';
-      const sourceTag=row.derived_from_property?'<span class="inspectionSourceTag">Uit objectgegevens</span>':'';
+      const sourceTag='';
       const actions=row.derived_from_property
         ? `<button class="miniLink detailBtn" data-id="${escAttr(row.property_id)}">Open object</button>`
         : `<button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button>`;
@@ -3844,9 +3844,34 @@ async function deleteDocument(id,path){
   if(selectedPropertyId) renderDetail(selectedPropertyId);
 }
 
+function normalizedInspectionType(value){
+  return norm(value).replace(/[^a-z0-9]+/g,'');
+}
+function inspectionsForProperty(propertyId,type){
+  const wanted=normalizedInspectionType(type);
+  return rawInspections
+    .filter(row=>row.property_id===propertyId&&normalizedInspectionType(row.inspection_type)===wanted)
+    .sort((a,b)=>{
+      const aDate=inspectionDeadline(a)||a.inspection_date||'';
+      const bDate=inspectionDeadline(b)||b.inspection_date||'';
+      return String(bDate).localeCompare(String(aDate));
+    });
+}
+function objectInspectionSummary(propertyId,type){
+  const row=inspectionsForProperty(propertyId,type)[0];
+  if(!row) return {date:'-',status:['Niet geregistreerd','warning']};
+  const status=inspectionDisplayStatus(row);
+  return {
+    date:dateFmt(inspectionDeadline(row)||row.inspection_date),
+    status:[status,inspectionStatusClass(status)]
+  };
+}
+
 function renderDetail(id){
   selectedPropertyId=id; const r=vastgoedData.find(x=>x.id===id); if(!r){ el('detailContent').innerHTML='<p>Object niet gevonden.</p>'; return; }
-  el('detailContent').innerHTML=`${photoBox(r.foto_url,'detailPhoto',`Foto van ${r.object}`)}<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel',r.energielabel)}${kv('Energielabel geldig tot',dateFmt(r.energielabel_geldig_tot))}${kv('Status energielabel',statusBadge(r.status_energy))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection"><h3>Onderhoud</h3>${kv('Type',r.onderhoud_titel)}${kv('Datum',maintenanceDateFmt(r.scope_inspectie_geldig_tot))}${kv('Status',statusBadge(r.status_scope))}${kv('Prioriteit',r.onderhoud_prioriteit)}${kv('Kosten',euro(r.onderhoud_kosten))}${kv('Beschrijving',r.onderhoud_omschrijving||'-')}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  const scope10=objectInspectionSummary(r.id,'SCOPE 10');
+  const scope12=objectInspectionSummary(r.id,'SCOPE 12');
+  el('detailContent').innerHTML=`${photoBox(r.foto_url,'detailPhoto',`Foto van ${r.object}`)}<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel',r.energielabel)}${kv('Energielabel geldig tot',dateFmt(r.energielabel_geldig_tot))}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection"><h3>Onderhoud</h3>${kv('Type',r.onderhoud_titel)}${kv('Datum',maintenanceDateFmt(r.scope_inspectie_geldig_tot))}${kv('Status',statusBadge(r.status_scope))}${kv('Prioriteit',r.onderhoud_prioriteit)}${kv('Kosten',euro(r.onderhoud_kosten))}${kv('Beschrijving',r.onderhoud_omschrijving||'-')}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
   setPage('detail', r.object);
   refreshPhotos();
 }
