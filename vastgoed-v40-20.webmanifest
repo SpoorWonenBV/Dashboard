@@ -1,0 +1,32 @@
+{
+  "name": "Vastgoed Dashboard",
+  "short_name": "Vastgoed",
+  "description": "Vastgoedbeheer voor objecten, contracten, onderhoud en keuringen.",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#172033",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/vastgoed-icon-192-v40-20.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/vastgoed-icon-512-v40-20.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/vastgoed-icon-maskable-512-v40-20.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
