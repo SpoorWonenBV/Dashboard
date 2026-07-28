@@ -3311,6 +3311,7 @@ function inspectionProperty(row){
   return vastgoedData.find(item=>item.id===row.property_id)||null;
 }
 function inspectionDeadline(row){
+  if(!row) return null;
   return row.next_inspection_date||row.valid_until||null;
 }
 function inspectionDisplayStatus(row){
@@ -4185,12 +4186,27 @@ function inspectionsForProperty(propertyId,type){
 }
 function objectInspectionSummary(propertyId,type){
   const row=inspectionsForProperty(propertyId,type)[0];
-  if(!row) return {date:'-',status:['Niet geregistreerd','warning']};
-  const status=inspectionDisplayStatus(row);
-  return {
-    date:dateFmt(inspectionDeadline(row)||row.inspection_date),
-    status:[status,inspectionStatusClass(status)]
-  };
+  if(row){
+    const status=inspectionDisplayStatus(row);
+    return {
+      date:dateFmt(inspectionDeadline(row)||row.inspection_date),
+      status:[status,inspectionStatusClass(status)]
+    };
+  }
+
+  // Bestaande SCOPE 10-datum uit de objectentabel blijft zichtbaar
+  // totdat deze als keuring is gesynchroniseerd.
+  if(normalizedInspectionType(type)===normalizedInspectionType('SCOPE 10')){
+    const property=getPropertyById(propertyId);
+    const legacyDate=property?.scope_valid_until||property?.property?.scope_valid_until||null;
+    if(legacyDate){
+      const days=daysUntil(legacyDate);
+      const status=days<0?'Verlopen':days<=90?'Verloopt binnenkort':'Geldig';
+      return {date:dateFmt(legacyDate),status:[status,inspectionStatusClass(status)]};
+    }
+  }
+
+  return {date:'-',status:['Niet geregistreerd','warning']};
 }
 
 function renderDetail(id){
@@ -4232,8 +4248,6 @@ async function uploadPropertyPhoto(propertyId, file){
 }
 
 async function syncScope10InspectionFromProperty(propertyId,validUntil){
-  if(!inspectionsSetupReady) return;
-
   const existing=inspectionsForProperty(propertyId,'SCOPE 10')[0]||null;
   const normalizedDate=validUntil||null;
   const payload={
@@ -4246,9 +4260,9 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
   };
 
   const result=existing
-    ? await sb.from('property_inspections').update(payload).eq('id',existing.id)
+    ? await sb.from('property_inspections').update(payload).eq('id',existing.id).select('id').single()
     : normalizedDate
-      ? await sb.from('property_inspections').insert(payload)
+      ? await sb.from('property_inspections').insert(payload).select('id').single()
       : {error:null};
 
   if(result.error) throw result.error;
