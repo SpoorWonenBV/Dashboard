@@ -791,8 +791,8 @@ function createRentLetterHtml(data){
   const indexNumber=n=>new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
   const oldPeriod=longMonthYear(`${data.old_period}-01`);
   const newPeriod=longMonthYear(`${data.new_period}-01`);
-  const recipientAddress=[r.straatnaam,r.huisnummer,r.postcode].filter(Boolean).join(' ');
-  const recipientCity=[recipientAddress,r.stad].filter(Boolean).join(', ');
+  const recipientAddress=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
+  const recipientCity=[r.postcode,r.stad].filter(Boolean).join(' ');
   const manualOverride=Number.isFinite(Number(data.calculated_rent))&&Math.abs(finalRent-Number(data.calculated_rent))>0.01;
   const overrideNote=manualOverride
     ? `<div class="overrideNote"><strong>Handmatige aanpassing:</strong> de definitieve kale huur is vastgesteld op € ${amount(finalRent)}.${data.override_reason?` Reden: ${escHtml(data.override_reason)}.`:''}</div>`
@@ -835,8 +835,8 @@ function createRentLetterHtml(data){
     <div class="toolbar"><button class="printButton" onclick="window.print()">Afdrukken / opslaan als PDF</button><div class="conceptNotice"><strong>Concept:</strong> controleer de brief. Er wordt niets automatisch verzonden.</div></div>
     <main class="sheet">
       <div class="recipient">
-        <div>${escHtml(r.huurder)}</div>
-        <div>${escHtml(r.object)}</div>
+        <div>${escHtml(r.huurder||'-')}</div>
+        <div>${escHtml(recipientAddress||'-')}</div>
         <div>${escHtml(recipientCity||'-')}</div>
       </div>
 
