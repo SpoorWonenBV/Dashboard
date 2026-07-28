@@ -337,7 +337,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=40.13',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=38.4',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -776,56 +776,26 @@ function proposalLetterData(){
 
 function createRentLetterHtml(data){
   const r=data.r;
-  const dateFormatter=new Intl.DateTimeFormat('nl-NL',{
-    day:'numeric',
-    month:'long',
-    year:'numeric',
-    timeZone:'Europe/Amsterdam'
-  });
-  const effectiveLong=dateFormatter.format(new Date(`${data.effective_date}T12:00:00Z`));
-  const letterDateLong=dateFormatter.format(new Date());
-  // Plaats uit eventuele briefdata gebruiken; Excel-model gebruikt Barendrecht.
-  const letterPlace=clean(data.letter_place||r.plaats||'Barendrecht');
-
-  const currentTotal=Number(data.current_rent||0);
+  const effectiveLong=new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${data.effective_date}T00:00:00Z`));
+  const currentRent=Number(data.current_rent||0);
   const serviceCosts=Number(data.service_costs||0);
+  const finalRent=Number(data.final_rent||0);
   const oldIndex=Number(data.old_index||0);
   const newIndex=Number(data.new_index||0);
   const ratio=oldIndex>0&&newIndex>0?newIndex/oldIndex:1;
-
-  // Het Excel-model behandelt de opgeslagen maandhuur als het totaalbedrag
-  // en trekt eerst het voorschot servicekosten af om de kale huur te bepalen.
-  const currentBaseRent=Math.max(0,Math.round((currentTotal-serviceCosts)*100)/100);
   const indexedServiceCosts=Math.round(serviceCosts*ratio*100)/100;
-  const proposedTotal=Number(data.final_rent||0);
-  const calculatedTotal=Math.round(currentTotal*ratio*100)/100;
-  const finalTotal=proposedTotal>0?proposedTotal:calculatedTotal;
-  const finalBaseRent=Math.round((finalTotal-indexedServiceCosts)*100)/100;
-  const rentIncrease=Math.round((finalBaseRent-currentBaseRent)*100)/100;
-
-  const amount=n=>new Intl.NumberFormat('nl-NL',{
-    minimumFractionDigits:2,
-    maximumFractionDigits:2
-  }).format(Number(n||0));
-  const indexNumber=n=>new Intl.NumberFormat('nl-NL',{
-    minimumFractionDigits:2,
-    maximumFractionDigits:2
-  }).format(Number(n||0));
-
+  const currentTotal=Math.round((currentRent+serviceCosts)*100)/100;
+  const rentIncrease=Math.round((finalRent-currentRent)*100)/100;
+  const finalTotal=Math.round((finalRent+indexedServiceCosts)*100)/100;
+  const amount=n=>new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
+  const indexNumber=n=>new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
   const oldPeriod=longMonthYear(`${data.old_period}-01`);
   const newPeriod=longMonthYear(`${data.new_period}-01`);
   const recipientAddress=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
   const recipientCity=[r.postcode,r.stad].filter(Boolean).join(' ');
-  const subjectCity=clean(r.stad);
-  const recipientAddressLine=recipientAddress||clean(r.object)||'-';
-  const subjectAddress=recipientAddress
-    ? `${recipientAddress}${subjectCity?` te ${subjectCity}`:''}`
-    : (clean(r.object)||subjectCity||'-');
-
-  const manualOverride=Number.isFinite(Number(data.calculated_rent))
-    && Math.abs(finalTotal-Number(data.calculated_rent))>0.01;
+  const manualOverride=Number.isFinite(Number(data.calculated_rent))&&Math.abs(finalRent-Number(data.calculated_rent))>0.01;
   const overrideNote=manualOverride
-    ? `<div class="overrideNote"><strong>Handmatige aanpassing:</strong> de definitieve maandhuur is vastgesteld op € ${amount(finalTotal)}.${data.override_reason?` Reden: ${escHtml(data.override_reason)}.`:''}</div>`
+    ? `<div class="overrideNote"><strong>Handmatige aanpassing:</strong> de definitieve kale huur is vastgesteld op € ${amount(finalRent)}.${data.override_reason?` Reden: ${escHtml(data.override_reason)}.`:''}</div>`
     : '';
 
   return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><title>Concept huuraanpassing ${escHtml(r.object)}</title><style>
@@ -835,17 +805,15 @@ function createRentLetterHtml(data){
     .toolbar{width:210mm;margin:18px auto 0;display:flex;align-items:center;gap:12px;padding:0 2mm}
     .printButton{padding:10px 14px;border:0;border-radius:8px;background:#172033;color:#fff;font:700 14px Arial,sans-serif;cursor:pointer}
     .conceptNotice{font:13px Arial,sans-serif;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px}
-    .sheet{width:210mm;min-height:297mm;margin:12px auto 28px;background:#fff;padding:25.4mm 19.05mm;box-shadow:0 18px 55px rgba(15,23,42,.16)}
-    .letterTopSpacer{height:27.94mm}
-    .recipient{min-height:14.604mm;line-height:4.868mm}
-    .letterDate{margin-top:14.604mm;line-height:4.868mm}
-    .subject{display:grid;grid-template-columns:25mm 1fr;column-gap:3mm;margin-top:4.868mm;line-height:4.868mm}
-    .greeting{margin:9.736mm 0 0;line-height:4.868mm}
+    .sheet{width:210mm;min-height:297mm;margin:12px auto 28px;background:#fff;padding:30mm 19.05mm 20mm;box-shadow:0 18px 55px rgba(15,23,42,.16)}
+    .recipient{min-height:15.1mm;line-height:5.05mm}
+    .subject{display:grid;grid-template-columns:25mm 1fr;column-gap:3mm;margin-top:12mm;line-height:5.05mm}
+    .greeting{margin:15.1mm 0 0}
     p{margin:0}
-    .bodyText{margin-top:4.868mm;line-height:4.868mm}
-    .calculationIntro{margin-top:4.868mm;line-height:4.868mm}
-    .calculation{margin-top:4.868mm;display:grid;grid-template-columns:minmax(0,1fr) 27mm 7mm 31mm;align-items:baseline}
-    .calculation .cell{min-height:4.868mm;line-height:4.868mm;white-space:nowrap}
+    .bodyText{margin-top:5.05mm}
+    .calculationIntro{margin-top:5.05mm}
+    .calculation{margin-top:5.05mm;display:grid;grid-template-columns:minmax(0,1fr) 27mm 7mm 31mm;align-items:baseline}
+    .calculation .cell{min-height:5.05mm;line-height:5.05mm;white-space:nowrap}
     .calculation .description{grid-column:1}
     .calculation .descriptionWide{grid-column:1 / 3}
     .calculation .indexValue{grid-column:2;text-align:left}
@@ -855,31 +823,25 @@ function createRentLetterHtml(data){
     .calculation .underline{border-bottom:1px solid #000}
     .calculation .finalCurrency,.calculation .finalNumber{border-top:1px solid #000;border-bottom:3px double #000;font-weight:700;font-style:italic}
     .calculation .finalDescription{font-weight:700;font-style:italic}
-    .blankRow{grid-column:1 / 5;min-height:4.868mm}
+    .blankRow{grid-column:1 / 5;min-height:5.05mm}
     .overrideNote{margin-top:6mm;padding:3mm;border:1px solid #aaa;font-size:9.5pt;line-height:1.35}
-    @page{size:A4 portrait;margin:25.4mm 19.05mm}
+    @page{size:A4 portrait;margin:0}
     @media print{
+      html,body{width:210mm;min-height:297mm;background:#fff}
       body{background:#fff}
       .toolbar{display:none!important}
-      .sheet{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+      .sheet{width:210mm;min-height:297mm;margin:0;padding:45mm 19.05mm 20mm;box-shadow:none}
     }
   </style></head><body>
     <div class="toolbar"><button class="printButton" onclick="window.print()">Afdrukken / opslaan als PDF</button><div class="conceptNotice"><strong>Concept:</strong> controleer de brief. Er wordt niets automatisch verzonden.</div></div>
     <main class="sheet">
-      <div class="letterTopSpacer"></div>
-
       <div class="recipient">
-        <div>${escHtml(r.huurder)}</div>
-        <div>${escHtml(recipientAddressLine)}</div>
+        <div>${escHtml(r.huurder||'-')}</div>
+        <div>${escHtml(recipientAddress||'-')}</div>
         <div>${escHtml(recipientCity||'-')}</div>
       </div>
 
-      <p class="letterDate">${escHtml(letterPlace)}, ${escHtml(letterDateLong)}</p>
-
-      <div class="subject">
-        <div>Betreft :</div><div>Huuraanpassing per ${escHtml(effectiveLong)}</div>
-        <div></div><div>${escHtml(subjectAddress)}</div>
-      </div>
+      <div class="subject"><div>Betreft :</div><div>Huuraanpassing per ${escHtml(effectiveLong)}</div></div>
 
       <p class="greeting">Geachte mevrouw / heer,</p>
 
@@ -895,14 +857,14 @@ function createRentLetterHtml(data){
         <div class="cell descriptionWide">De thans verschuldigde huurprijs bedraagt excl. BTW</div><div class="cell currency">€</div><div class="cell number">${amount(currentTotal)}</div>
         <div class="blankRow"></div>
         <div class="cell descriptionWide">Af : voorschot servicekosten</div><div class="cell currency">€</div><div class="cell number underline">${amount(serviceCosts)}</div>
-        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(currentBaseRent)}</div>
+        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(currentRent)}</div>
         <div class="blankRow"></div>
         <div class="cell description">Prijsindexcijfer ${escHtml(newPeriod)}</div><div class="cell indexValue">${indexNumber(newIndex)}</div><div class="cell currency"></div><div class="cell number"></div>
         <div class="cell description">Prijsindexcijfer ${escHtml(oldPeriod)}</div><div class="cell indexValue">${indexNumber(oldIndex)}</div><div class="cell currency"></div><div class="cell number"></div>
         <div class="blankRow"></div>
         <div class="cell descriptionWide heading">Huurverhoging</div><div class="cell currency"></div><div class="cell number"></div>
-        <div class="cell descriptionWide">(=${indexNumber(newIndex)} / ${indexNumber(oldIndex)} x ${amount(currentBaseRent)}) - ${amount(currentBaseRent)} =</div><div class="cell currency">€</div><div class="cell number underline">${amount(rentIncrease)}</div>
-        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(finalBaseRent)}</div>
+        <div class="cell descriptionWide">(=${indexNumber(newIndex)} / ${indexNumber(oldIndex)} x ${amount(currentRent)}) - ${amount(currentRent)} =</div><div class="cell currency">€</div><div class="cell number underline">${amount(rentIncrease)}</div>
+        <div class="cell descriptionWide"></div><div class="cell currency">€</div><div class="cell number">${amount(finalRent)}</div>
         <div class="blankRow"></div>
         <div class="cell descriptionWide">Bij: voor de kosten van bijkomende leveringen en diensten</div><div class="cell currency"></div><div class="cell number"></div>
         <div class="cell descriptionWide heading">Verhoging</div><div class="cell currency"></div><div class="cell number"></div>
