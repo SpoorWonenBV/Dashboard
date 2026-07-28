@@ -3277,10 +3277,47 @@ function inspectionStatusBadge(row){
   const status=inspectionDisplayStatus(row);
   return statusBadge([status,inspectionStatusClass(status)]);
 }
-function filteredInspections(data){
+function isEnergyLabelInspection(row){
+  return norm(row?.inspection_type).replace(/\s+/g,'')==='energielabel';
+}
+function propertyEnergyLabelInspectionRows(data){
+  const manualPropertyIds=new Set(
+    rawInspections
+      .filter(isEnergyLabelInspection)
+      .map(row=>row.property_id)
+      .filter(Boolean)
+  );
+
+  return data
+    .filter(property=>{
+      const label=clean(property.energielabel);
+      const hasLabel=label&&label!=='-';
+      return !manualPropertyIds.has(property.id)&&(hasLabel||property.energielabel_geldig_tot);
+    })
+    .map(property=>({
+      id:`property-energy-label:${property.id}`,
+      property_id:property.id,
+      inspection_type:'Energielabel',
+      inspection_date:null,
+      valid_until:property.energielabel_geldig_tot||null,
+      next_inspection_date:null,
+      status:property.energielabel_geldig_tot?'Geldig':'Nog te plannen',
+      inspection_company:null,
+      certificate_number:clean(property.energielabel)&&property.energielabel!=='-'?`Label ${property.energielabel}`:null,
+      cost:0,
+      notes:'Automatisch overgenomen uit de objectgegevens.',
+      document_path:null,
+      document_name:null,
+      derived_from_property:true
+    }));
+}
+function allInspectionRows(data){
   const allowedIds=new Set(data.map(item=>item.id));
-  return rawInspections.filter(row=>{
-    if(row.property_id&&!allowedIds.has(row.property_id)) return false;
+  const stored=rawInspections.filter(row=>!row.property_id||allowedIds.has(row.property_id));
+  return [...stored,...propertyEnergyLabelInspectionRows(data)];
+}
+function filteredInspections(data){
+  return allInspectionRows(data).filter(row=>{
     const property=inspectionProperty(row);
     const hay=JSON.stringify({...row,object:property?.object,address:property?.straatnaam,house_number:property?.huisnummer}).toLowerCase();
     if(query&&!hay.includes(query.toLowerCase())) return false;
@@ -3304,13 +3341,13 @@ function renderInspections(data){
     return;
   }
   const rows=filteredInspections(data);
-  const all=rawInspections.filter(row=>!row.property_id||data.some(item=>item.id===row.property_id));
+  const all=allInspectionRows(data);
   const valid=all.filter(row=>inspectionDisplayStatus(row)==='Geldig').length;
   const soon=all.filter(row=>inspectionDisplayStatus(row)==='Verloopt binnenkort').length;
   const expired=all.filter(row=>inspectionDisplayStatus(row)==='Verlopen').length;
   const actionNeeded=all.filter(row=>['Nog te plannen','Afgekeurd'].includes(inspectionDisplayStatus(row))).length;
   const properties=[...data].sort(compareObjectAddress);
-  const types=[...new Set([...INSPECTION_TYPES,...rawInspections.map(row=>row.inspection_type).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
+  const types=[...new Set([...INSPECTION_TYPES,...all.map(row=>row.inspection_type).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
   const statuses=['Geldig','Verloopt binnenkort','Verlopen','Nog te plannen','Ingepland','In behandeling','Afgekeurd','Niet van toepassing'];
 
   target.innerHTML=`
@@ -3338,16 +3375,20 @@ function renderInspections(data){
             const property=inspectionProperty(row);
             const address=property?[property.straatnaam,property.huisnummer].filter(Boolean).join(' '):'Object ontbreekt';
             const docButton=row.document_path?`<button class="miniLink openInspectionDocBtn" data-path="${escAttr(row.document_path)}">Open document</button>`:'-';
+            const sourceTag=row.derived_from_property?'<span class="inspectionSourceTag">Uit objectgegevens</span>':'';
+            const actions=row.derived_from_property
+              ? `<button class="miniLink detailBtn" data-id="${escAttr(row.property_id)}">Open object</button>`
+              : `<button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button>`;
             return `<tr>
               <td><strong>${escHtml(property?.object||'Onbekend object')}</strong><span class="subtle">${escHtml(address)}</span></td>
-              <td><strong>${escHtml(row.inspection_type||'-')}</strong>${row.notes?`<span class="subtle">${escHtml(row.notes)}</span>`:''}</td>
+              <td><strong>${escHtml(row.inspection_type||'-')}</strong>${sourceTag}${row.notes?`<span class="subtle">${escHtml(row.notes)}</span>`:''}</td>
               <td>${dateFmt(row.inspection_date)}</td>
               <td>${dateFmt(inspectionDeadline(row))}${row.valid_until&&row.next_inspection_date?`<span class="subtle">Geldig tot ${dateFmt(row.valid_until)}</span>`:''}</td>
               <td>${escHtml(row.inspection_company||'-')}</td>
               <td>${row.certificate_number?`<span>${escHtml(row.certificate_number)}</span>`:''}${docButton}</td>
-              <td>${euro2(row.cost)}</td>
+              <td>${row.derived_from_property?'-':euro2(row.cost)}</td>
               <td>${inspectionStatusBadge(row)}</td>
-              <td><div class="financialActionGroup"><button class="miniLink editInspectionBtn" data-id="${escAttr(row.id)}">Bewerken</button><button class="miniLink dangerTextBtn deleteInspectionBtn" data-id="${escAttr(row.id)}">Verwijderen</button></div></td>
+              <td><div class="financialActionGroup">${actions}</div></td>
             </tr>`;
           }).join('')||'<tr><td colspan="9">Nog geen keuringen gevonden.</td></tr>'}
         </table>
