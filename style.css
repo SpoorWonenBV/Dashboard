@@ -1235,3 +1235,27 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
     font-size:13px;
   }
 }
+
+
+/* v40.12: onderhoudsstatus direct vanuit het overzicht aanpassen */
+.maintenanceQuickStatus{
+  min-width:120px;
+  padding:7px 30px 7px 10px;
+  border:1px solid #cbd5e1;
+  border-radius:9px;
+  background:#fff;
+  color:#334155;
+  font:inherit;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.maintenanceQuickStatus:hover{border-color:#94a3b8}
+.maintenanceQuickStatus:focus{
+  outline:2px solid rgba(37,99,235,.18);
+  border-color:#2563eb;
+}
+.maintenanceQuickStatus.saving{
+  opacity:.6;
+  cursor:wait;
+}

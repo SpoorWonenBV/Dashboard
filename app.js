@@ -2482,6 +2482,45 @@ function compareMaintenanceType(a,b){
   const bType=typeof b==='string' ? b : (b?.type || b?.maintenance_type || b?.title || '');
   return String(aType).localeCompare(String(bType),'nl',{sensitivity:'base',numeric:true});
 }
+function maintenanceStatusSelect(row){
+  return `<select class="maintenanceQuickStatus" data-key="${escAttr(row.key)}" aria-label="Status van ${escAttr(row.type||'onderhoud')} aanpassen">
+    ${MAINTENANCE_STATUSES.map(status=>`<option value="${escAttr(status)}" ${maintenanceStatusLabel(row.status)===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+  </select>`;
+}
+async function updateMaintenanceStatusFromOverview(select){
+  const key=select?.dataset?.key;
+  const row=findMaintenanceRowByKey(key);
+  if(!row) return;
+
+  const previous=maintenanceStatusLabel(row.status);
+  const next=maintenanceStatusLabel(select.value);
+  if(previous===next) return;
+
+  select.disabled=true;
+  select.classList.add('saving');
+
+  let res;
+  if(row.source==='maintenance'){
+    const payload={status:next};
+    if(next==='Afgerond'&&!row.done_date) payload.completed_date=new Date().toISOString().slice(0,10);
+    res=await sb.from('maintenance').update(payload).eq('id',row.id);
+  }else{
+    const payload={status:next};
+    if(next==='Afgerond'&&!row.done_date) payload.done_date=new Date().toISOString().slice(0,10);
+    res=await sb.from('property_maintenance_history').update(payload).eq('id',row.id);
+  }
+
+  if(res.error){
+    select.value=previous;
+    select.disabled=false;
+    select.classList.remove('saving');
+    alert(`Status kon niet worden opgeslagen: ${res.error.message}`);
+    return;
+  }
+
+  await loadData();
+}
+
 function maintenanceRowTable(rows){
   const sortedRows=[...rows].sort((a,b)=>{
     const typeCompare=compareMaintenanceType(a,b);
@@ -2489,7 +2528,7 @@ function maintenanceRowTable(rows){
     return String(a.planned_date||a.done_date||'9999').localeCompare(String(b.planned_date||b.done_date||'9999'));
   });
   return `<table class="maintenanceObjectTable"><tr><th>Type</th><th>Bouwjaar</th><th>Gedaan</th><th>Planning</th><th>Partij</th><th>Kosten</th><th>Status</th><th>Acties</th></tr>`+
-    sortedRows.map(r=>`<tr><td>${r.type}</td><td>${r.build_year||'-'}</td><td>${maintenanceDateFmt(r.done_date)}</td><td>${maintenanceDateFmt(r.planned_date)}</td><td>${r.supplier||'-'}</td><td>${euro(r.cost||0)}</td><td>${statusBadge([maintenanceStatusLabel(r.status), maintStatusClass(r.status,r.planned_date)])}</td><td><button class="miniLink editMaintBtn" data-key="${escAttr(r.key)}">Bewerk</button>${r.objectId?` <button class="miniLink detailBtn" data-id="${r.objectId}">Open object</button>`:''}</td></tr>`).join('') + `</table>`;
+    sortedRows.map(r=>`<tr><td>${r.type}</td><td>${r.build_year||'-'}</td><td>${maintenanceDateFmt(r.done_date)}</td><td>${maintenanceDateFmt(r.planned_date)}</td><td>${r.supplier||'-'}</td><td>${euro(r.cost||0)}</td><td>${maintenanceStatusSelect(r)}</td><td><button class="miniLink editMaintBtn" data-key="${escAttr(r.key)}">Bewerk</button>${r.objectId?` <button class="miniLink detailBtn" data-id="${r.objectId}">Open object</button>`:''}</td></tr>`).join('') + `</table>`;
 }
 function renderMaintenanceOverview(data){
   const allRows=maintenanceSourceRows(data);
@@ -4011,6 +4050,7 @@ function init(){
     if(e.target.id==='maintenanceObjectFilter'){ maintenanceObjectFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceTypeFilter'){ maintenanceTypeFilter=e.target.value; render(); }
     if(e.target.id==='maintenanceStatusFilter'){ maintenanceStatusFilter=e.target.value; render(); }
+    if(e.target.classList.contains('maintenanceQuickStatus')) updateMaintenanceStatusFromOverview(e.target);
     if(e.target.id==='inspectionObjectFilter'){ inspectionObjectFilter=e.target.value; renderInspections(filtered()); }
     if(e.target.id==='inspectionTypeFilter'){ inspectionTypeFilter=e.target.value; renderInspections(filtered()); }
     if(e.target.id==='inspectionStatusFilter'){ inspectionStatusFilter=e.target.value; renderInspections(filtered()); }
