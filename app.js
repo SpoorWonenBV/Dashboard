@@ -2,6 +2,7 @@ const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
 let sb, query = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
+let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
   if(!s) return '-';
@@ -2175,6 +2176,8 @@ function setPage(pageId, title){
     renderFinancialPage(filtered());
     setFinancialTab(activeFinancialTab);
   }
+
+  requestAnimationFrame(()=>updateContractStickyHeader());
 }
 
 function normalize(properties, contracts, tenants, maintenance, documents=[], history=[]){
@@ -4166,6 +4169,101 @@ function agendaToday(){
   renderAgenda(filtered());
 }
 
+function setupContractStickyHeader(){
+  const table=el('contractTable');
+  const wrap=table?.closest('.contractTableWrap');
+  const contractsPage=el('contracten');
+
+  document.querySelector('.contractFloatingHeader')?.remove();
+  updateContractStickyHeader=()=>{};
+
+  if(!table||!wrap||!contractsPage) return;
+
+  const sourceHeader=table.querySelector('tr');
+  if(!sourceHeader) return;
+
+  const floating=document.createElement('div');
+  floating.className='contractFloatingHeader';
+  floating.setAttribute('aria-hidden','true');
+
+  const viewport=document.createElement('div');
+  viewport.className='contractFloatingHeaderViewport';
+
+  const floatingTable=document.createElement('table');
+  floatingTable.className='contractFloatingTable';
+
+  const floatingRow=sourceHeader.cloneNode(true);
+  const floatingBody=document.createElement('tbody');
+  floatingBody.appendChild(floatingRow);
+  floatingTable.appendChild(floatingBody);
+  viewport.appendChild(floatingTable);
+  floating.appendChild(viewport);
+  document.body.appendChild(floating);
+
+  const syncColumnWidths=()=>{
+    const sourceCells=[...sourceHeader.children];
+    const floatingCells=[...floatingRow.children];
+    const tableWidth=Math.max(table.scrollWidth,wrap.clientWidth);
+
+    floatingTable.style.width=`${tableWidth}px`;
+    floatingTable.style.minWidth=`${tableWidth}px`;
+
+    sourceCells.forEach((cell,index)=>{
+      const width=cell.getBoundingClientRect().width;
+      if(floatingCells[index]){
+        floatingCells[index].style.width=`${width}px`;
+        floatingCells[index].style.minWidth=`${width}px`;
+        floatingCells[index].style.maxWidth=`${width}px`;
+      }
+    });
+  };
+
+  const update=()=>{
+    if(!document.body.contains(table)){
+      floating.remove();
+      return;
+    }
+
+    const pageActive=contractsPage.classList.contains('active');
+    const sourceRect=sourceHeader.getBoundingClientRect();
+    const tableRect=table.getBoundingClientRect();
+    const wrapRect=wrap.getBoundingClientRect();
+    const headerHeight=Math.max(sourceRect.height,48);
+    const shouldShow=
+      pageActive &&
+      sourceRect.bottom<=0 &&
+      tableRect.bottom>headerHeight &&
+      wrapRect.right>0 &&
+      wrapRect.left<window.innerWidth;
+
+    floating.classList.toggle('visible',shouldShow);
+
+    if(!shouldShow) return;
+
+    syncColumnWidths();
+    floating.style.left=`${Math.max(0,wrapRect.left)}px`;
+    floating.style.width=`${Math.min(wrapRect.width,window.innerWidth-Math.max(0,wrapRect.left))}px`;
+    floating.style.top='0px';
+    floatingTable.style.transform=`translateX(${-wrap.scrollLeft}px)`;
+  };
+
+  updateContractStickyHeader=update;
+  wrap.onscroll=update;
+
+  if(window.__contractStickyScrollHandler){
+    window.removeEventListener('scroll',window.__contractStickyScrollHandler);
+    window.removeEventListener('resize',window.__contractStickyScrollHandler);
+  }
+  window.__contractStickyScrollHandler=update;
+  window.addEventListener('scroll',update,{passive:true});
+  window.addEventListener('resize',update,{passive:true});
+
+  requestAnimationFrame(()=>{
+    syncColumnWidths();
+    update();
+  });
+}
+
 function render(){
   const data=filtered(), notes=notificationItems(data);
   const objectPageData=filteredObjectsForPage(data);
@@ -4195,6 +4293,7 @@ function render(){
     const hasContract=Boolean(r.contract?.id);
     return `<tr><td><strong>${r.object}</strong><span class="subtle">${r.straatnaam} ${r.huisnummer}</span></td><td>${r.huurder}</td><td>${statusBadge(hasContract?[r.contract_status,r.contract_opgezegd?'warning':'ok']:['Geen contract','danger'])}</td><td>${hasContract?dateFmt(r.startdatum_contract):'-'}</td><td>${hasContract?originalEnd:'-'}</td><td>${hasContract?contractEndDisplay(r):'-'}${hasContract?renewalCount:''}</td><td>${hasContract?contractPeriodText(r):'-'}</td><td>${hasContract?(r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))+mismatch:'-'}</td><td>${hasContract?renewalText(r):'-'}</td><td>${statusBadge(hasContract?r.status_opzeg:['Geen contract','danger'])}</td><td><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td></tr>`;
   }).join('');
+  setupContractStickyHeader();
   if(el('maintenanceOverview')) renderMaintenanceOverview(data);
   renderInspections(data);
 }

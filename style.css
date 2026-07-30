@@ -1357,3 +1357,40 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
 .propertyFormSection .formGrid{
   margin-bottom:0;
 }
+
+
+/* v40.28: kolomkoppen van Contracten blijven zichtbaar tijdens scrollen */
+.contractFloatingHeader{
+  position:fixed;
+  z-index:18;
+  display:none;
+  overflow:hidden;
+  background:#fff;
+  border:1px solid #e2e8f0;
+  box-shadow:0 8px 20px rgba(15,23,42,.12);
+  pointer-events:none;
+}
+.contractFloatingHeader.visible{display:block}
+.contractFloatingHeaderViewport{
+  width:100%;
+  overflow:hidden;
+}
+.contractFloatingTable{
+  border-collapse:collapse;
+  table-layout:fixed;
+  background:#fff;
+  will-change:transform;
+}
+.contractFloatingTable th{
+  padding:12px;
+  border-bottom:1px solid #e2e8f0;
+  background:#fff;
+  color:#64748b;
+  font-size:13px;
+  text-align:left;
+  vertical-align:middle;
+  white-space:normal;
+}
+@media(max-width:900px){
+  .contractFloatingHeader{z-index:19}
+}
