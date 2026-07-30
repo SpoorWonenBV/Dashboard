@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
+let sb, query = '', notificationTypeFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -2563,6 +2563,39 @@ function notificationItems(data){
   const score={danger:0,warning:1,ok:2};
   return items.sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9));
 }
+function renderNotificationFilters(items){
+  const target=el('notificationFilters');
+  if(!target) return;
+
+  const counts={};
+  items.forEach(item=>{
+    const type=clean(item.type)||'Overig';
+    counts[type]=(counts[type]||0)+1;
+  });
+
+  const types=Object.keys(counts).sort((a,b)=>
+    a.localeCompare(b,'nl',{sensitivity:'base',numeric:true})
+  );
+
+  if(notificationTypeFilter&&!types.includes(notificationTypeFilter)){
+    notificationTypeFilter='';
+  }
+
+  target.innerHTML=`<div class="maintenanceFilters">
+    <label>Onderwerp
+      <select id="notificationTypeFilter">
+        <option value="">Alle onderwerpen (${items.length})</option>
+        ${types.map(type=>`<option value="${escAttr(type)}" ${notificationTypeFilter===type?'selected':''}>${escHtml(type)} (${counts[type]})</option>`).join('')}
+      </select>
+    </label>
+  </div>`;
+}
+
+function filteredNotificationItems(items){
+  if(!notificationTypeFilter) return items;
+  return items.filter(item=>item.type===notificationTypeFilter);
+}
+
 function actionHtml(n){ return `<div class="alert ${n.sev}"><strong><span class="typeTag">${n.type}</span> ${n.title}</strong><span>${n.text}</span>${n.objectId?`<button class="miniLink detailBtn" data-id="${n.objectId}">Bekijk object</button>`:''}</div>`; }
 function isVacant(r){ return String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-'; }
 function contractBucket(r){ if(r.contract_opgezegd) return 'Opgezegd'; if(r.contract_onbepaalde) return 'Onbepaalde tijd'; if(r.aantal_verlengingen>0) return 'Verlengd'; const d=daysUntil(r.opzegdatum); if(d===null) return 'Geen opzegdatum'; if(d<0) return 'Opzegmoment verlopen'; if(d<=90) return '0-3 mnd'; if(d<=180) return '3-6 mnd'; if(d<=365) return '6-12 mnd'; return '>12 mnd'; }
@@ -4445,6 +4478,8 @@ function setupContractStickyHeader(){
 
 function render(){
   const data=filtered(), notes=notificationItems(data);
+  renderNotificationFilters(notes);
+  const visibleNotifications=filteredNotificationItems(notes);
   const objectPageData=filteredObjectsForPage(data);
   const contractPageData=filteredContractsForPage(data);
   renderObjectFilters(data);
@@ -4457,7 +4492,7 @@ function render(){
   if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return r.energielabel_verplicht&&d!==null&&d<=180;}).length;
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
-  el('notificationList').innerHTML=notes.map(actionHtml).join('') || '<p>Geen meldingen gevonden.</p>';
+  el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard">${photoBox(r.foto_url,'objectPhoto',`Foto van ${r.object}`)}<h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
   refreshPhotos();
   renderContractOverview(contractPageData);
@@ -4810,6 +4845,7 @@ function init(){
   el('logoutBtn').addEventListener('click',()=>secureLogout('Je bent veilig uitgelogd.'));
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{
+    if(e.target.id==='notificationTypeFilter'){ notificationTypeFilter=e.target.value; render(); }
     if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
     if(e.target.id==='objectTypeFilter'){ objectTypeFilter=e.target.value; render(); }
     if(e.target.id==='objectStatusFilter'){ objectStatusFilter=e.target.value; render(); }
