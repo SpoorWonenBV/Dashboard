@@ -2730,6 +2730,7 @@ function csvHeaderKey(value){
 }
 
 const OBJECT_CSV_ALIASES={
+  object_id:['object id','object-id','object_id','id object'],
   name:['object','objectnaam','naam object','pand','pandnaam','name'],
   address:['straatnaam','straat','adres','address'],
   house_number:['huisnummer','huis nr','nummer','nr','house number','house_number'],
@@ -2741,10 +2742,13 @@ const OBJECT_CSV_ALIASES={
   yearly_rent:['huurprijs excl p j','huurprijs p j','huur per jaar','huur pj','jaarhuur','yearly rent','yearly_rent'],
   service_costs:['servicekosten excl','servicekosten','service costs','service_costs'],
   deposit:['waarborgsom','borg','deposit'],
+  corporate_guarantee:['concerngarantie','concern garantie','corporate guarantee','corporate_guarantee'],
+  bank_guarantee:['bankgarantie','bank garantie','bank guarantee','bank_guarantee'],
   energy_label:['energielabel','energy label','energy_label'],
   energy_label_valid_until:['energielabel geldig tot','energy label valid until','energy_label_valid_until'],
   rent_increase_month:['maand huurverhogingen','maand huurverhoging','huurverhogingsmaand','rent increase month','rent_increase_month'],
-  scope_valid_until:['scope inspectie geldig tot','scope-inspectie geldig tot','scope geldig tot','scope_valid_until'],
+  scope_valid_until:['scope 10 geldig tot','scope10 geldig tot','scope 10 geldig volgende','scope inspectie geldig tot','scope-inspectie geldig tot','scope geldig tot','scope_valid_until'],
+  scope12_valid_until:['scope 12 geldig tot','scope12 geldig tot','scope 12 geldig volgende','scope12_valid_until'],
   purchase_value:['aankoopwaarde','purchase value','purchase_value'],
   woz_value:['woz waarde','woz-waarde','woz','woz_value'],
   mortgage_value:['hypotheekschuld','hypotheek','mortgage value','mortgage_value'],
@@ -2904,6 +2908,7 @@ function objectCsvRecords(rows){
     records.push({
       rowNumber:index+2,
       present,
+      object_id:csvCell(row,map,'object_id'),
       name,
       address,
       house_number:houseNumber,
@@ -2915,10 +2920,13 @@ function objectCsvRecords(rows){
       yearly_rent:csvCell(row,map,'yearly_rent'),
       service_costs:csvCell(row,map,'service_costs'),
       deposit:csvCell(row,map,'deposit'),
+      corporate_guarantee:csvCell(row,map,'corporate_guarantee'),
+      bank_guarantee:csvCell(row,map,'bank_guarantee'),
       energy_label:csvCell(row,map,'energy_label'),
       energy_label_valid_until:csvCell(row,map,'energy_label_valid_until'),
       rent_increase_month:csvCell(row,map,'rent_increase_month'),
       scope_valid_until:csvCell(row,map,'scope_valid_until'),
+      scope12_valid_until:csvCell(row,map,'scope12_valid_until'),
       purchase_value:csvCell(row,map,'purchase_value'),
       woz_value:csvCell(row,map,'woz_value'),
       mortgage_value:csvCell(row,map,'mortgage_value'),
@@ -2941,6 +2949,12 @@ function objectCsvRecords(rows){
 }
 
 function findPropertyForObjectImport(record){
+  const objectId=clean(record.object_id);
+  if(objectId){
+    const exact=rawProperties.find(property=>property.id===objectId);
+    if(exact) return exact;
+  }
+
   const addressKey=norm(record.address);
   const houseKey=norm(record.house_number);
   const fullKey=norm([record.address,record.house_number].filter(Boolean).join(' '));
@@ -2961,7 +2975,7 @@ function propertyPayloadFromCsv(record, isNew){
   textFields.forEach(field=>{
     if(record.present.has(field)) payload[field]=record[field]||null;
   });
-  const numberFields=['monthly_rent','yearly_rent','service_costs','deposit','purchase_value','woz_value','mortgage_value','mortgage_interest'];
+  const numberFields=['monthly_rent','yearly_rent','service_costs','deposit','corporate_guarantee','bank_guarantee','purchase_value','woz_value','mortgage_value','mortgage_interest'];
   numberFields.forEach(field=>{
     if(!record.present.has(field)) return;
     if(field==='deposit'){
@@ -2975,6 +2989,12 @@ function propertyPayloadFromCsv(record, isNew){
   dateFields.forEach(field=>{
     if(record.present.has(field)) payload[field]=parseObjectImportDate(record[field]);
   });
+
+  // Jaarhuur blijft altijd gelijk aan maandhuur × 12 wanneer maandhuur is aangeleverd.
+  if(record.present.has('monthly_rent')&&payload.monthly_rent!==null&&payload.monthly_rent!==undefined){
+    payload.yearly_rent=Math.round(payload.monthly_rent*12*100)/100;
+  }
+
   if(isNew){
     payload.name=payload.name || record.name || [record.address,record.house_number].filter(Boolean).join(' ') || 'Nieuw object';
     payload.address=payload.address ?? (record.address || null);
@@ -3017,6 +3037,13 @@ async function importObjectCsv(){
         property=propertyResult.data;
         if(propertyWasExisting) propertiesUpdated++;
         else { propertiesAdded++; rawProperties.push(property); }
+
+        if(record.present.has('scope_valid_until')){
+          await syncPropertyInspection(property.id,'SCOPE 10',parseObjectImportDate(record.scope_valid_until));
+        }
+        if(record.present.has('scope12_valid_until')){
+          await syncPropertyInspection(property.id,'SCOPE 12',parseObjectImportDate(record.scope12_valid_until));
+        }
 
         const existingContract=rawContracts.find(contract=>contract.property_id===property.id) || null;
         let tenant=existingContract ? rawTenants.find(item=>item.id===existingContract.tenant_id) || null : null;
@@ -3634,57 +3661,92 @@ function excelCell(value,type='String',style=''){
   }
   return `<Cell${styleAttr}><Data ss:Type="String">${excelXmlEscape(value)}</Data></Cell>`;
 }
-function objectBackupRows(){
+function rawInspectionDateForBackup(propertyId,type,legacyDate=''){
+  const row=inspectionsForProperty(propertyId,type)[0];
+  return inspectionDeadline(row)||legacyDate||'';
+}
+
+function objectImportBackupRows(){
+  return [...vastgoedData].sort(compareObjectAddress).map(r=>[
+    r.id,
+    r.object,
+    r.straatnaam,
+    r.huisnummer,
+    r.postcode,
+    r.stad,
+    r.type,
+    r.status,
+    r.huurder==='-'?'':r.huurder,
+    r.email,
+    r.telefoon,
+    r.huur_pm,
+    r.huur_pj,
+    r.servicekosten,
+    r.waarborgsom,
+    r.concerngarantie,
+    r.bankgarantie,
+    r.aankoopwaarde,
+    r.woz_waarde,
+    r.hypotheek,
+    r.hypotheekrente,
+    r.aankoopdatum,
+    r.energielabel==='-'?'':r.energielabel,
+    r.energielabel_geldig_tot,
+    r.maand_huurverhoging,
+    rawInspectionDateForBackup(r.id,'SCOPE 10',r.property?.scope_valid_until),
+    rawInspectionDateForBackup(r.id,'SCOPE 12'),
+    r.startdatum_contract,
+    r.contract_onbepaalde?'':r.einddatum_contract,
+    r.contract_onbepaalde?'Onbepaalde tijd':'Bepaalde tijd',
+    r.opzegtermijn_maanden,
+    r.opzegdatum,
+    r.verlenging_jaren,
+    r.contract_status
+  ]);
+}
+
+function objectFullBackupRows(){
   return [...vastgoedData].sort(compareObjectAddress).map(r=>{
     const scope10=objectInspectionSummary(r.id,'SCOPE 10');
     const scope12=objectInspectionSummary(r.id,'SCOPE 12');
     return [
-      r.id,
-      r.object,
-      r.straatnaam,
-      r.huisnummer,
-      r.postcode,
-      r.stad,
-      r.type,
-      r.status,
-      r.huurder==='-'?'':r.huurder,
-      r.email,
-      r.telefoon,
-      r.huur_pm,
-      r.huur_pj,
-      r.servicekosten,
-      r.waarborgsom,
-      r.concerngarantie,
-      r.bankgarantie,
-      r.aankoopwaarde,
-      r.woz_waarde,
-      r.hypotheek,
-      r.hypotheekrente,
-      r.aankoopdatum,
-      r.bruto_rendement===null?'':r.bruto_rendement,
-      r.energielabel==='-'?'':r.energielabel,
-      r.energielabel_geldig_tot,
-      scope10.date==='-'?'':scope10.date,
-      scope10.status?.[0]||'',
-      scope12.date==='-'?'':scope12.date,
-      scope12.status?.[0]||'',
-      r.startdatum_contract,
-      r.contract_onbepaalde?'Onbepaalde tijd':r.oorspronkelijke_einddatum_contract,
-      r.einddatum_contract,
-      r.opzegtermijn_maanden,
-      r.opzegdatum,
-      r.verlenging_jaren,
-      r.aantal_verlengingen,
-      r.contract_status,
-      r.maand_huurverhoging,
-      r.onderhoud_titel,
-      r.scope_inspectie_geldig_tot,
-      r.onderhoud_status,
-      r.onderhoud_kosten,
+      r.id,r.object,r.straatnaam,r.huisnummer,r.postcode,r.stad,r.type,r.status,
+      r.huurder==='-'?'':r.huurder,r.email,r.telefoon,r.huur_pm,r.huur_pj,r.servicekosten,
+      r.waarborgsom,r.concerngarantie,r.bankgarantie,r.aankoopwaarde,r.woz_waarde,r.hypotheek,
+      r.hypotheekrente,r.aankoopdatum,r.bruto_rendement===null?'':r.bruto_rendement,
+      r.energielabel==='-'?'':r.energielabel,r.energielabel_geldig_tot,
+      rawInspectionDateForBackup(r.id,'SCOPE 10',r.property?.scope_valid_until),scope10.status?.[0]||'',
+      rawInspectionDateForBackup(r.id,'SCOPE 12'),scope12.status?.[0]||'',
+      r.startdatum_contract,r.contract_onbepaalde?'Onbepaalde tijd':r.oorspronkelijke_einddatum_contract,
+      r.einddatum_contract,r.opzegtermijn_maanden,r.opzegdatum,r.verlenging_jaren,
+      r.aantal_verlengingen,r.contract_status,r.maand_huurverhoging,
+      r.onderhoud_titel,r.scope_inspectie_geldig_tot,r.onderhoud_status,r.onderhoud_kosten,
       r.onderhoud_prioriteit
     ];
   });
 }
+
+function excelWorksheetXml(name,headers,rows,numericColumns=new Set(),moneyColumns=new Set(),percentColumns=new Set(),selected=false){
+  const headerXml=headers.map(value=>excelCell(value,'String','Header')).join('');
+  const rowsXml=rows.map(row=>`<Row>${row.map((value,index)=>{
+    const style=moneyColumns.has(index)?'Money':percentColumns.has(index)?'Percent':'';
+    return excelCell(value,numericColumns.has(index)?'Number':'String',style);
+  }).join('')}</Row>`).join('');
+
+  return `<Worksheet ss:Name="${excelXmlEscape(name)}">
+  <Table>
+   <Column ss:Width="145"/><Column ss:Width="145"/><Column ss:Width="120"/><Column ss:Width="75"/><Column ss:Width="85"/><Column ss:Width="100"/>
+   <Row ss:Height="28">${headerXml}</Row>
+   ${rowsXml}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
+   ${selected?'<Selected/>':''}
+  </WorksheetOptions>
+  <AutoFilter x:Range="R1C1:R${rows.length+1}C${headers.length}" xmlns="urn:schemas-microsoft-com:office:excel"/>
+ </Worksheet>`;
+}
+
 function downloadObjectBackup(){
   const message=el('objectBackupMessage');
   const button=el('downloadObjectBackupBtn');
@@ -3697,26 +3759,34 @@ function downloadObjectBackup(){
   if(message) message.textContent='Excel-back-up wordt gemaakt...';
 
   try{
-    const headers=[
+    const importHeaders=[
+      'Object-ID','Objectnaam','Straatnaam','Huisnummer','Postcode','Stad','Type pand','Objectstatus',
+      'Huurder','E-mail huurder','Telefoon huurder','Maandhuur','Jaarhuur','Servicekosten',
+      'Waarborgsom','Concerngarantie','Bankgarantie','Aankoopwaarde','WOZ-waarde','Hypotheekschuld',
+      'Hypotheekrente','Aankoopdatum','Energielabel','Energielabel geldig tot','Maand huurverhoging',
+      'SCOPE 10 geldig tot','SCOPE 12 geldig tot','Startdatum contract','Einddatum contract',
+      'Contractduur','Opzegtermijn maanden','Uiterste opzegdatum','Verlenging jaren','Contractstatus'
+    ];
+    const importRows=objectImportBackupRows();
+    const importNumeric=new Set([11,12,13,14,15,16,17,18,19,20,30,32]);
+    const importMoney=new Set([11,12,13,14,15,16,17,18,19]);
+    const importPercent=new Set([20]);
+
+    const fullHeaders=[
       'Object-ID','Objectnaam','Straatnaam','Huisnummer','Postcode','Stad','Type object','Objectstatus',
       'Huurder','E-mail huurder','Telefoon huurder','Huur per maand','Huur per jaar','Servicekosten',
-      'Waarborgsom','Concerngarantie','Bankgarantie','Aankoopwaarde','WOZ-waarde','Hypotheekschuld','Hypotheekrente (%)','Aankoopdatum',
-      'Bruto rendement (%)','Energielabel','Energielabel geldig tot','SCOPE 10 geldig / volgende',
-      'Status SCOPE 10','SCOPE 12 geldig / volgende','Status SCOPE 12','Startdatum contract',
-      'Oorspronkelijke einddatum','Huidige einddatum','Opzegtermijn (maanden)','Uiterste opzegdatum',
-      'Verlenging (jaren)','Aantal verlengingen','Contractstatus','Maand huurverhoging',
-      'Onderhoudstype','Onderhoudsdatum','Onderhoudsstatus','Onderhoudskosten','Onderhoudsprioriteit'
+      'Waarborgsom','Concerngarantie','Bankgarantie','Aankoopwaarde','WOZ-waarde','Hypotheekschuld',
+      'Hypotheekrente (%)','Aankoopdatum','Bruto rendement (%)','Energielabel','Energielabel geldig tot',
+      'SCOPE 10 geldig tot','Status SCOPE 10','SCOPE 12 geldig tot','Status SCOPE 12',
+      'Startdatum contract','Oorspronkelijke einddatum','Huidige einddatum','Opzegtermijn (maanden)',
+      'Uiterste opzegdatum','Verlenging (jaren)','Aantal verlengingen','Contractstatus',
+      'Maand huurverhoging','Onderhoudstype','Onderhoudsdatum','Onderhoudsstatus','Onderhoudskosten',
+      'Onderhoudsprioriteit'
     ];
-    const numericColumns=new Set([11,12,13,14,15,16,17,18,19,20,22,32,34,35,41]);
-    const moneyColumns=new Set([11,12,13,14,15,16,17,18,19,41]);
-    const percentColumns=new Set([20,22]);
-    const rows=objectBackupRows();
-
-    const headerXml=headers.map(value=>excelCell(value,'String','Header')).join('');
-    const rowsXml=rows.map(row=>`<Row>${row.map((value,index)=>{
-      const style=moneyColumns.has(index)?'Money':percentColumns.has(index)?'Percent':'';
-      return excelCell(value,numericColumns.has(index)?'Number':'String',style);
-    }).join('')}</Row>`).join('');
+    const fullRows=objectFullBackupRows();
+    const fullNumeric=new Set([11,12,13,14,15,16,17,18,19,20,22,32,34,35,41]);
+    const fullMoney=new Set([11,12,13,14,15,16,17,18,19,41]);
+    const fullPercent=new Set([20,22]);
 
     const generatedAt=new Date();
     const generatedText=generatedAt.toLocaleString('nl-NL');
@@ -3737,26 +3807,18 @@ function downloadObjectBackup(){
   <Style ss:ID="Money"><NumberFormat ss:Format="€ #,##0.00"/></Style>
   <Style ss:ID="Percent"><NumberFormat ss:Format="0.00"/></Style>
  </Styles>
- <Worksheet ss:Name="Objecten">
-  <Table>
-   <Column ss:Width="145"/><Column ss:Width="145"/><Column ss:Width="120"/><Column ss:Width="75"/><Column ss:Width="85"/><Column ss:Width="100"/>
-   <Row ss:Height="28">${headerXml}</Row>
-   ${rowsXml}
-  </Table>
-  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
-   <Selected/>
-  </WorksheetOptions>
-  <AutoFilter x:Range="R1C1:R${rows.length+1}C${headers.length}" xmlns="urn:schemas-microsoft-com:office:excel"/>
- </Worksheet>
+ ${excelWorksheetXml('Objecten import',importHeaders,importRows,importNumeric,importMoney,importPercent,true)}
+ ${excelWorksheetXml('Volledige back-up',fullHeaders,fullRows,fullNumeric,fullMoney,fullPercent,false)}
  <Worksheet ss:Name="Back-upinformatie">
   <Table>
-   <Column ss:Width="180"/><Column ss:Width="280"/>
+   <Column ss:Width="190"/><Column ss:Width="430"/>
    <Row><Cell ss:StyleID="Title"><Data ss:Type="String">Back-upinformatie</Data></Cell><Cell ss:StyleID="Title"><Data ss:Type="String"></Data></Cell></Row>
    <Row>${excelCell('Gemaakt op')}${excelCell(generatedText)}</Row>
-   <Row>${excelCell('Aantal objecten')}${excelCell(rows.length,'Number')}</Row>
-   <Row>${excelCell('Bron')}${excelCell('Vastgoed-dashboard')}</Row>
-   <Row>${excelCell('Opmerking')}${excelCell('Deze back-up bevat alle objecten die op het moment van downloaden in het dashboard stonden.')}</Row>
+   <Row>${excelCell('Aantal objecten')}${excelCell(importRows.length,'Number')}</Row>
+   <Row>${excelCell('Nieuwe objecten toevoegen')}${excelCell('Voeg nieuwe regels toe in het tabblad Objecten import en laat Object-ID leeg.')}</Row>
+   <Row>${excelCell('Opnieuw importeren')}${excelCell('Sla alleen het tabblad Objecten import op als CSV UTF-8 en upload dit via de bestaande CSV-uploadknop bij Objecten.')}</Row>
+   <Row>${excelCell('Bestaande objecten')}${excelCell('Object-ID wordt als eerste gebruikt om bestaande objecten veilig terug te vinden. Verwijder of verander deze ID niet bij bestaande regels.')}</Row>
+   <Row>${excelCell('Volledige back-up')}${excelCell('Het tabblad Volledige back-up bevat ook berekende statussen en onderhoudsoverzicht. Gebruik voor CSV-import altijd Objecten import.')}</Row>
   </Table>
  </Worksheet>
 </Workbook>`;
@@ -3771,7 +3833,7 @@ function downloadObjectBackup(){
     link.click();
     link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
-    if(message) message.textContent=`Back-up gedownload: ${rows.length} objecten.`;
+    if(message) message.textContent=`Back-up gedownload: ${importRows.length} objecten. Het eerste tabblad is geschikt voor CSV-import.`;
   }catch(error){
     console.error(error);
     if(message) message.textContent=`Back-up maken mislukt: ${error.message}`;
@@ -4267,11 +4329,10 @@ async function uploadPropertyPhoto(propertyId, file){
   return path;
 }
 
-async function syncScope10InspectionFromProperty(propertyId,validUntil){
+async function syncPropertyInspection(propertyId,inspectionType,validUntil){
   const normalizedDate=validUntil||null;
+  const normalizedType=normalizedInspectionType(inspectionType);
 
-  // Lees rechtstreeks uit Supabase. Zo zijn we niet afhankelijk van een
-  // mogelijk verouderde lokale lijst en worden dubbele SCOPE 10-regels gevonden.
   const lookup=await sb
     .from('property_inspections')
     .select('*')
@@ -4279,15 +4340,15 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
 
   if(lookup.error) throw lookup.error;
 
-  const scopeRows=(lookup.data||[])
-    .filter(row=>normalizedInspectionType(row.inspection_type)===normalizedInspectionType('SCOPE 10'))
+  const matchingRows=(lookup.data||[])
+    .filter(row=>normalizedInspectionType(row.inspection_type)===normalizedType)
     .sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')));
 
-  const primary=scopeRows[0]||null;
-  const duplicates=scopeRows.slice(1);
+  const primary=matchingRows[0]||null;
+  const duplicates=matchingRows.slice(1);
   const payload={
     property_id:propertyId,
-    inspection_type:'SCOPE 10',
+    inspection_type:inspectionType,
     valid_until:normalizedDate,
     next_inspection_date:null,
     status:normalizedDate?'Geldig':'Nog te plannen',
@@ -4317,8 +4378,6 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
     savedRow=inserted.data;
   }
 
-  // Oude dubbele SCOPE 10-keuringen kunnen ervoor zorgen dat het overzicht
-  // een andere datum toont. Deze dubbele regels worden daarom verwijderd.
   if(duplicates.length){
     const duplicateIds=duplicates.map(row=>row.id).filter(Boolean);
     const removed=await sb
@@ -4329,13 +4388,16 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
     if(removed.error) throw removed.error;
   }
 
-  // Werk de lokale lijst direct bij; loadData volgt daarna nogmaals.
   rawInspections=rawInspections.filter(row=>
-    !(row.property_id===propertyId&&normalizedInspectionType(row.inspection_type)===normalizedInspectionType('SCOPE 10'))
+    !(row.property_id===propertyId&&normalizedInspectionType(row.inspection_type)===normalizedType)
   );
   if(savedRow) rawInspections.push(savedRow);
 
   return savedRow;
+}
+
+async function syncScope10InspectionFromProperty(propertyId,validUntil){
+  return syncPropertyInspection(propertyId,'SCOPE 10',validUntil);
 }
 
 function syncYearlyRentFromMonthly(){
