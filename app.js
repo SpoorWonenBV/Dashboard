@@ -4320,8 +4320,23 @@ async function syncScope10InspectionFromProperty(propertyId,validUntil){
   return savedRow;
 }
 
+function syncYearlyRentFromMonthly(){
+  const monthlyInput=el('propertyMonthlyRent');
+  const yearlyInput=el('propertyYearlyRent');
+  if(!monthlyInput||!yearlyInput) return;
+
+  const monthly=Number(String(monthlyInput.value).replace(',','.'));
+  if(!Number.isFinite(monthly)){
+    yearlyInput.value='';
+    return;
+  }
+
+  yearlyInput.value=(monthly*12).toFixed(2).replace(/\.00$/,'');
+}
+
 async function saveProperty(e){
-  e.preventDefault(); el('formMessage').textContent='Bezig met opslaan...';
+  e.preventDefault();
+  syncYearlyRentFromMonthly(); el('formMessage').textContent='Bezig met opslaan...';
   const propertyId=el('propertyId').value, tenantId=el('tenantId').value, contractId=el('contractId').value, maintenanceId=el('maintenanceId').value;
   const propertyPayload={name:el('propertyName').value,address:el('propertyAddress').value||null,house_number:el('propertyHouseNumber').value||null,postal_code:clean(el('propertyPostalCode').value).toUpperCase()||null,city:el('propertyCity').value||null,property_type:el('propertyType').value||null,status:el('propertyStatus').value||'Actief',monthly_rent:numOrNull(el('propertyMonthlyRent').value),yearly_rent:numOrNull(el('propertyYearlyRent').value),service_costs:numOrNull(el('propertyServiceCosts').value),deposit:numOrNull(el('propertyDeposit').value),energy_label:el('propertyEnergyLabel').value||null,energy_label_valid_until:el('propertyEnergyValidUntil').value||null,rent_increase_month:el('propertyRentIncreaseMonth').value||null,scope_valid_until:el('propertyScopeValidUntil').value||null,purchase_value:numOrNull(el('propertyPurchaseValue')?.value||''),woz_value:numOrNull(el('propertyWozValue')?.value||''),mortgage_value:numOrNull(el('propertyMortgageValue')?.value||''),mortgage_interest:numOrNull(el('propertyMortgageInterest')?.value||''),purchase_date:el('propertyPurchaseDate')?.value||null,photo_url:el('propertyPhotoUrl')?.value||null};
   const propRes=await upsertEntity('properties',propertyId,propertyPayload); if(propRes.error){el('formMessage').textContent=propRes.error.message;return;} const savedProperty=propRes.data;
@@ -4482,6 +4497,7 @@ function init(){
   el('serviceFinalAdvance')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceFinalActual')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceCostLetterBtn')?.addEventListener('click',openServiceCostLetter);
+  el('propertyMonthlyRent')?.addEventListener('input',syncYearlyRentFromMonthly);
   el('downloadObjectBackupBtn')?.addEventListener('click',downloadObjectBackup);
   el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); });
   el('brandingForm').addEventListener('submit',saveBranding);
