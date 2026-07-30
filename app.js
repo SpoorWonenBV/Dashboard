@@ -376,6 +376,7 @@ let serviceCostSetupReady=true;
 let inspectionsSetupReady=true;
 let activeInspectionId=null;
 let activeFinancialTab='rent';
+let activeRentPropertyGroup='residential';
 let activeMaintenanceTab='maintenance';
 let serviceCostYear=new Date().getFullYear()-1;
 let activeServiceCostContext=null;
@@ -515,7 +516,11 @@ function rentIncreaseEffectiveDate(r){
   let year=today.getFullYear();
   if(monthIndex<today.getMonth()) year++;
   let target=`${year}-${String(monthIndex+1).padStart(2,'0')}-01`;
-  const processed=rawRentIncreaseProposals.some(p=>p.contract_id===r.contract?.id&&p.effective_date===target&&p.status==='Verwerkt');
+  const processed=rawRentIncreaseProposals.some(p=>
+    p.contract_id===r.contract?.id &&
+    p.effective_date===target &&
+    (p.status==='Verwerkt'||p.status==='Niet verhoogd'||p.skip_increase===true)
+  );
   if(processed) target=`${year+1}-${String(monthIndex+1).padStart(2,'0')}-01`;
   return target;
 }
@@ -558,6 +563,25 @@ function calculateRentValues(currentRent,oldIndex,newIndex){
   return {percentage,rent,serviceCosts:null,total:rent};
 }
 
+function isResidentialProperty(r){
+  const type=norm(r?.type||r?.property?.property_type||'');
+  const residentialTerms=[
+    'woning','woonhuis','appartement','studio','kamer','maisonnette',
+    'eengezins','bovenwoning','benedenwoning','portiekwoning'
+  ];
+  return residentialTerms.some(term=>type.includes(term));
+}
+
+function setRentPropertyGroup(group){
+  activeRentPropertyGroup=group==='other'?'other':'residential';
+  document.querySelectorAll('.rentPropertyTab').forEach(button=>{
+    const active=button.dataset.rentPropertyGroup===activeRentPropertyGroup;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-selected',String(active));
+  });
+  renderFinancialOverview(filtered());
+}
+
 function rentRowContext(r){
   const effectiveDate=rentIncreaseEffectiveDate(r);
   const periods=effectiveDate?rentReferencePeriods(effectiveDate):{newDate:null,oldDate:null};
@@ -578,6 +602,7 @@ function rentContextStatus(context){
   if(r.contract_opgezegd&&!rentIncreaseAppliesDuringContract(r,effectiveDate)) return ['Eindigt vóór verhoging','warning'];
   if(!Number(r.huur_pm)) return ['Huur ontbreekt','danger'];
   if(proposal?.status==='Verwerkt') return ['Verwerkt','ok'];
+  if(proposal?.status==='Niet verhoogd'||proposal?.skip_increase===true) return ['Niet verhoogd','ok'];
   if(proposal?.status==='Goedgekeurd') return ['Goedgekeurd','ok'];
   if(proposal) return ['Concept','warning'];
   if(!effectiveDate) return ['Controle nodig','warning'];
@@ -591,27 +616,64 @@ function renderFinancialOverview(data){
   const overview=el('financialOverview');
   const table=el('rentIncreaseTable');
   if(!overview||!table) return;
-  const eligible=data.filter(r=>r.contract?.id&&rentIncreaseAppliesDuringContract(r));
+
+  const allEligible=data.filter(r=>r.contract?.id&&rentIncreaseAppliesDuringContract(r));
+  const residentialCount=allEligible.filter(isResidentialProperty).length;
+  const otherCount=allEligible.length-residentialCount;
+
+  if(el('rentResidentialCount')) el('rentResidentialCount').textContent=residentialCount;
+  if(el('rentOtherCount')) el('rentOtherCount').textContent=otherCount;
+
+  document.querySelectorAll('.rentPropertyTab').forEach(button=>{
+    const active=button.dataset.rentPropertyGroup===activeRentPropertyGroup;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-selected',String(active));
+  });
+
+  const notice=el('rentPropertyGroupNotice');
+  if(notice){
+    notice.innerHTML=activeRentPropertyGroup==='residential'
+      ? '<strong>Woningen</strong><span>Woningen staan apart zodat de huurverhoging afzonderlijk kan worden beoordeeld en uitgewerkt. Controleer het definitieve bedrag altijd handmatig.</span>'
+      : '<strong>Bedrijfsmatig vastgoed</strong><span>Hier staan winkels, kantoren, bedrijfsruimten en alle overige typen vastgoed.</span>';
+  }
+
+  const eligible=allEligible.filter(r=>
+    activeRentPropertyGroup==='residential' ? isResidentialProperty(r) : !isResidentialProperty(r)
+  );
   const contexts=eligible.map(rentRowContext);
-  const today=isoToday();
   const soon=contexts.filter(c=>{const d=daysUntil(c.effectiveDate);return d!==null&&d>=0&&d<=90;}).length;
   const concepts=contexts.filter(c=>c.proposal?.status==='Concept').length;
   const approved=contexts.filter(c=>c.proposal?.status==='Goedgekeurd').length;
-  const processed=rawRentIncreaseProposals.filter(p=>p.status==='Verwerkt').length;
-  const needsCheck=contexts.filter(c=>['danger','warning'].includes(rentContextStatus(c)[1])&&!['Concept','Goedgekeurd','Verwerkt'].includes(rentContextStatus(c)[0])).length;
+
+  const propertyIds=new Set(eligible.map(r=>r.id));
+  const processed=rawRentIncreaseProposals.filter(p=>p.status==='Verwerkt'&&propertyIds.has(p.property_id)).length;
+  const skipped=rawRentIncreaseProposals.filter(p=>
+    (p.status==='Niet verhoogd'||p.skip_increase===true)&&propertyIds.has(p.property_id)
+  ).length;
+  const needsCheck=contexts.filter(c=>
+    ['danger','warning'].includes(rentContextStatus(c)[1]) &&
+    !['Concept','Goedgekeurd','Verwerkt','Niet verhoogd'].includes(rentContextStatus(c)[0])
+  ).length;
+
   const cbsText=cbsIndexCache.loadedAt
     ? `Laatst opgehaald: ${cbsIndexCache.loadedAt.toLocaleString('nl-NL')}`
     : (cbsIndexCache.error?'CBS-koppeling niet beschikbaar; handmatige invoer blijft mogelijk.':'CBS-cijfers worden automatisch geladen.');
+
   overview.innerHTML=`<div class="financialSource"><span><strong>Bron:</strong> CBS 86141NED · CPI 2025=100 · 000000 Alle bestedingen</span><span>${cbsText}</span></div>
   <div class="cards financialSummaryCards">
     <div class="card"><span>Binnen 90 dagen</span><strong>${soon}</strong></div>
     <div class="card"><span>Concepten</span><strong>${concepts}</strong></div>
     <div class="card"><span>Controle nodig</span><strong>${needsCheck}</strong></div>
     <div class="card"><span>Goedgekeurd</span><strong>${approved}</strong></div>
+    <div class="card"><span>Niet verhoogd</span><strong>${skipped}</strong></div>
     <div class="card"><span>Verwerkt</span><strong>${processed}</strong></div>
   </div>`;
 
-  const rows=contexts.sort((a,b)=>String(a.effectiveDate||'9999').localeCompare(String(b.effectiveDate||'9999'))||compareObjectAddress(a.r,b.r));
+  const rows=contexts.sort((a,b)=>
+    String(a.effectiveDate||'9999').localeCompare(String(b.effectiveDate||'9999')) ||
+    compareObjectAddress(a.r,b.r)
+  );
+
   table.innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Ingangsdatum</th><th>Referentiemaanden</th><th>Huidige huur</th><th>Voorstel</th><th>Status</th><th>Acties</th></tr>`+
     rows.map(context=>{
       const {r,effectiveDate,periods,newCpi,oldCpi,proposal,calculated}=context;
@@ -622,21 +684,26 @@ function renderFinancialOverview(data){
         : '-';
       const actionLabel=proposal?'Bekijken':'Berekenen';
       return `<tr>
-        <td><strong>${escHtml(r.object)}</strong><span class="subtle">${escHtml([r.straatnaam,r.huisnummer,r.postcode].filter(Boolean).join(' '))}</span></td>
+        <td><strong>${escHtml(r.object)}</strong><span class="subtle">${escHtml([r.straatnaam,r.huisnummer,r.postcode].filter(Boolean).join(' '))}</span><span class="rentStatusText">${isResidentialProperty(r)?'Woning':'Bedrijfsmatig vastgoed'}</span></td>
         <td>${escHtml(r.huurder)}</td>
         <td>${dateFmt(effectiveDate)}</td>
         <td>${cpiText}</td>
         <td>${euro2(r.huur_pm)}</td>
         <td>${finalRent?euro2(finalRent):'-'}${calculated.percentage!==null?`<span class="rentStatusText">${calculated.percentage.toFixed(2).replace('.',',')}%</span>`:''}</td>
         <td>${statusBadge(status)}</td>
-        <td><div class="financialActionGroup"><button class="miniLink rentEditBtn" data-id="${r.id}" data-date="${effectiveDate||''}">${actionLabel}</button>${proposal?`<button class="miniLink rentQuickLetterBtn" data-id="${r.id}" data-date="${effectiveDate}">Conceptbrief</button>`:''}</div></td>
+        <td><div class="financialActionGroup">
+          <button class="miniLink rentEditBtn" data-id="${r.id}" data-date="${effectiveDate||''}">${actionLabel}</button>
+          ${proposal?`<button class="miniLink rentQuickLetterBtn" data-id="${r.id}" data-date="${effectiveDate}">Conceptbrief</button>`:''}
+          <button class="miniLink rentSkipBtn" data-id="${r.id}" data-date="${effectiveDate||''}">Niet verhogen dit jaar</button>
+        </div></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8">Geen contracten met een toepasselijke huurverhoging gevonden.</td></tr>';
+    }).join('') || '<tr><td colspan="8">Geen contracten in deze vastgoedgroep gevonden.</td></tr>';
 
   if(!rentIncreaseSetupReady){
-    overview.insertAdjacentHTML('afterbegin','<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand uit. Daarna kunnen concepten en huurhistorie veilig worden opgeslagen.</span></div>');
+    overview.insertAdjacentHTML('afterbegin','<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand uit. Daarna kunnen concepten, huurhistorie en jaren zonder verhoging veilig worden opgeslagen.</span></div>');
   }
 }
+
 
 function openRentIncreaseModal(propertyId,effectiveDate){
   const r=getPropertyById(propertyId);
@@ -652,7 +719,7 @@ function openRentIncreaseModal(propertyId,effectiveDate){
   el('rentPropertyId').value=r.id;
   el('rentContractId').value=r.contract?.id||'';
   el('rentIncreaseModalTitle').textContent=`Huurverhoging · ${r.object}`;
-  el('rentIncreaseModalMeta').textContent=`${r.huurder} · ${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')}`;
+  el('rentIncreaseModalMeta').textContent=`${isResidentialProperty(r)?'Woning':'Bedrijfsmatig vastgoed'} · ${r.huurder} · ${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')}`;
   el('rentCurrentRent').textContent=euro2(r.huur_pm);
   el('rentServiceCosts').textContent=euro2(r.servicekosten);
   el('rentCalculatedServiceCosts').textContent='-';
@@ -707,12 +774,21 @@ function updateRentModalCalculation(){
 
 function updateRentApplyButton(){
   const button=el('applyRentIncreaseBtn');
+  const skipButton=el('skipRentIncreaseBtn');
   const proposalId=el('rentProposalId').value;
   const approved=el('rentProposalStatus').value==='Goedgekeurd';
-  const processed=activeRentContext?.proposal?.status==='Verwerkt';
-  button.classList.toggle('hidden',!proposalId||processed);
+  const finalStatus=activeRentContext?.proposal?.status;
+  const processed=finalStatus==='Verwerkt';
+  const skipped=finalStatus==='Niet verhoogd'||activeRentContext?.proposal?.skip_increase===true;
+
+  button.classList.toggle('hidden',!proposalId||processed||skipped);
   button.disabled=!approved;
   button.title=approved?'':'Zet de status eerst op Goedgekeurd.';
+
+  if(skipButton){
+    skipButton.classList.toggle('hidden',processed||skipped);
+    skipButton.disabled=processed||skipped;
+  }
 }
 
 function rentProposalPayload(){
@@ -748,6 +824,7 @@ function rentProposalPayload(){
     override_reason:reason||null,
     notes:clean(el('rentNotes').value)||null,
     status:el('rentProposalStatus').value,
+    skip_increase:false,
     cbs_table:CBS_TABLE_ID,
     cbs_measure:'CPI',
     cbs_category:'000000 Alle bestedingen',
@@ -913,6 +990,90 @@ function openRentConceptLetter(){
     window.setTimeout(()=>URL.revokeObjectURL(blobUrl),60_000);
   }catch(error){
     el('rentIncreaseMessage').textContent='Conceptbrief kan niet worden gemaakt: '+error.message;
+  }
+}
+
+async function markRentNotIncreased(propertyId,effectiveDate){
+  const r=getPropertyById(propertyId);
+  if(!r||!r.contract?.id) return;
+
+  const targetDate=effectiveDate||rentIncreaseEffectiveDate(r);
+  if(!targetDate){
+    alert('De ingangsmaand van de huurverhoging ontbreekt bij dit object.');
+    return;
+  }
+
+  if(!rentIncreaseSetupReady){
+    alert('Voer eerst het meegeleverde Supabase SQL-bestand uit.');
+    return;
+  }
+
+  const year=targetDate.slice(0,4);
+  if(!confirm(`Wil je voor ${r.object} in ${year} geen huurverhoging toepassen? De maandhuur en servicekosten blijven ongewijzigd.`)) return;
+
+  const periods=rentReferencePeriods(targetDate);
+  const oldEntry=cbsIndexCache.values.get(monthKeyFromIso(periods.oldDate));
+  const newEntry=cbsIndexCache.values.get(monthKeyFromIso(periods.newDate));
+  const oldIndex=Number(oldEntry?.value)||1;
+  const newIndex=Number(newEntry?.value)||oldIndex;
+
+  const payload={
+    property_id:r.id,
+    contract_id:r.contract.id,
+    effective_date:targetDate,
+    current_rent:Number(r.huur_pm||0),
+    service_costs:Number(r.servicekosten||0),
+    old_period:monthKeyFromIso(periods.oldDate),
+    new_period:monthKeyFromIso(periods.newDate),
+    old_index:oldIndex,
+    new_index:newIndex,
+    calculated_percentage:0,
+    calculated_rent:Number(r.huur_pm||0),
+    final_rent:Number(r.huur_pm||0),
+    override_reason:'Bewust geen huurverhoging toegepast',
+    notes:`De bestaande huur is in ${year} ongewijzigd voortgezet.`,
+    status:'Concept',
+    skip_increase:true,
+    cbs_table:CBS_TABLE_ID,
+    cbs_measure:'CPI',
+    cbs_category:'000000 Alle bestedingen',
+    cbs_is_provisional:Boolean(oldEntry?.provisional||newEntry?.provisional),
+    updated_at:new Date().toISOString()
+  };
+
+  const result=await sb
+    .from('rent_increase_proposals')
+    .upsert(payload,{onConflict:'contract_id,effective_date'})
+    .select()
+    .single();
+
+  if(result.error) throw result.error;
+
+  const index=rawRentIncreaseProposals.findIndex(item=>
+    item.id===result.data.id ||
+    (item.contract_id===result.data.contract_id&&item.effective_date===result.data.effective_date)
+  );
+  if(index>=0) rawRentIncreaseProposals[index]=result.data;
+  else rawRentIncreaseProposals.push(result.data);
+
+  if(activeRentContext?.r?.id===r.id){
+    activeRentContext.proposal=result.data;
+    closeRentIncreaseModal();
+  }
+
+  await loadData();
+  renderFinancialOverview(filtered());
+}
+
+async function skipActiveRentIncrease(){
+  const message=el('rentIncreaseMessage');
+  try{
+    if(!activeRentContext) return;
+    message.textContent='Keuze wordt opgeslagen...';
+    await markRentNotIncreased(activeRentContext.r.id,el('rentEffectiveDate').value||activeRentContext.effectiveDate);
+  }catch(error){
+    console.error(error);
+    message.textContent='Opslaan mislukt: '+error.message;
   }
 }
 
@@ -4586,6 +4747,7 @@ function init(){
     const editMaint=e.target.closest('.editMaintBtn');
     const newMaint=e.target.closest('.newMaintBtn');
     const rentEdit=e.target.closest('.rentEditBtn');
+    const rentSkip=e.target.closest('.rentSkipBtn');
     const quickLetter=e.target.closest('.rentQuickLetterBtn');
     const serviceEdit=e.target.closest('.serviceCostEditBtn');
     const serviceQuickLetter=e.target.closest('.serviceCostQuickLetterBtn');
@@ -4602,6 +4764,12 @@ function init(){
     if(editMaint){ const row=findMaintenanceRowByKey(editMaint.dataset.key); if(row) openMaintenanceModal('edit', row); }
     if(newMaint) openMaintenanceModal('new', null, newMaint.dataset.id || '');
     if(rentEdit) openRentIncreaseModal(rentEdit.dataset.id,rentEdit.dataset.date);
+    if(rentSkip){
+      markRentNotIncreased(rentSkip.dataset.id,rentSkip.dataset.date).catch(error=>{
+        console.error(error);
+        el('financialMessage').textContent='Niet verhogen kon niet worden opgeslagen: '+error.message;
+      });
+    }
     if(quickLetter){ openRentIncreaseModal(quickLetter.dataset.id,quickLetter.dataset.date); setTimeout(openRentConceptLetter,0); }
     if(serviceEdit) openServiceCostModal(serviceEdit.dataset.id,serviceEdit.dataset.year);
     if(serviceQuickLetter){ openServiceCostModal(serviceQuickLetter.dataset.id,serviceQuickLetter.dataset.year); setTimeout(openServiceCostLetter,0); }
@@ -4666,7 +4834,9 @@ function init(){
   el('rentFinalRent')?.addEventListener('input',()=>{el('rentFinalRent').dataset.autoCalculated='false';});
   el('rentProposalStatus')?.addEventListener('change',updateRentApplyButton);
   el('rentLetterBtn')?.addEventListener('click',openRentConceptLetter);
+  el('skipRentIncreaseBtn')?.addEventListener('click',skipActiveRentIncrease);
   el('applyRentIncreaseBtn')?.addEventListener('click',applyRentIncrease);
+  document.querySelectorAll('.rentPropertyTab').forEach(button=>button.addEventListener('click',()=>setRentPropertyGroup(button.dataset.rentPropertyGroup)));
   document.querySelectorAll('.maintenanceTab').forEach(button=>button.addEventListener('click',()=>setMaintenanceTab(button.dataset.maintenanceTab)));
   document.querySelectorAll('.financialTab').forEach(button=>button.addEventListener('click',()=>setFinancialTab(button.dataset.financialTab)));
   el('agendaPrevBtn')?.addEventListener('click',()=>shiftAgendaMonth(-1));
