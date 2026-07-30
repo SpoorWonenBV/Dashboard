@@ -1523,7 +1523,7 @@ function buildEmailNotificationEvents(data,settings,referenceIso=isoToday()){
     if(scopeDate){
       add({rule:'scope_inspection',date:scopeDate,title:'Scope-inspectie verloopt',object:r.object,objectId:r.id,detail:objectText});
     }
-    if(r.energielabel_geldig_tot){
+    if(r.energielabel_verplicht&&r.energielabel_geldig_tot){
       add({rule:'energy_label',date:r.energielabel_geldig_tot,title:'Energielabel verloopt',object:r.object,objectId:r.id,detail:objectText});
     }
     const rentDate=r.contract?.id?rentIncreaseEffectiveDate(r):null;
@@ -2382,7 +2382,7 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
     const matchedHistory = historyByProperty[p.id] || historyByObjectKey[objectKey] || historyByObjectKey[addressKey] || [];
     const maintenanceHistory = [...propertyMaintenance, ...matchedHistory].sort((a,b)=>String(b.planned_date||b.completed_date||b.done_date||'').localeCompare(String(a.planned_date||a.completed_date||a.done_date||'')));
     const documentsList = (documentsByProperty[p.id] || []).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
-    return {id:p.id, property:p, contract, contract_timeline:timeline, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', postcode:p.postal_code||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, energiekosten:p.energy_costs||0, waarborgsom:p.deposit||0, concerngarantie:p.corporate_guarantee||0, bankgarantie:p.bank_guarantee||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', maand_huurverhoging:p.rent_increase_month||'', oorspronkelijke_einddatum_contract:timeline.originalEnd, einddatum_contract:contractEnd, contract_onbepaalde:indefiniteContract, contract_status:timeline.storedStatus, contract_opgezegd:timeline.terminated, startdatum_contract:contract.start_date||'', oorspronkelijke_opzegdatum:timeline.initialNotice, opzegdatum:noticeDate, opzegtermijn_maanden:timeline.noticeMonths, verlenging_jaren:timeline.renewalYears, aantal_verlengingen:timeline.renewalCount, opzegdatum_afwijking:timeline.noticeMismatch, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:timeline.contractStatus, status_opzeg:timeline.noticeStatus, status_scope:getDateStatus(scopeDate,365,90), status_energy:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
+    return {id:p.id, property:p, contract, contract_timeline:timeline, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', postcode:p.postal_code||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, energiekosten:p.energy_costs||0, waarborgsom:p.deposit||0, concerngarantie:p.corporate_guarantee||0, bankgarantie:p.bank_guarantee||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', energielabel_verplicht:p.energy_label_required!==false, maand_huurverhoging:p.rent_increase_month||'', oorspronkelijke_einddatum_contract:timeline.originalEnd, einddatum_contract:contractEnd, contract_onbepaalde:indefiniteContract, contract_status:timeline.storedStatus, contract_opgezegd:timeline.terminated, startdatum_contract:contract.start_date||'', oorspronkelijke_opzegdatum:timeline.initialNotice, opzegdatum:noticeDate, opzegtermijn_maanden:timeline.noticeMonths, verlenging_jaren:timeline.renewalYears, aantal_verlengingen:timeline.renewalCount, opzegdatum_afwijking:timeline.noticeMismatch, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:timeline.contractStatus, status_opzeg:timeline.noticeStatus, status_scope:getDateStatus(scopeDate,365,90), status_energy:p.energy_label_required===false?['Niet verplicht','ok']:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
   });
 }
 function showLogin(message=''){ el('loginView').classList.remove('hidden'); el('appView').classList.add('hidden'); if(el('loginError')) el('loginError').textContent=message; if(el('password')) el('password').value=''; }
@@ -2532,7 +2532,7 @@ function notificationItems(data){
       else if(maintenanceDays<=90) items.push(actionItem('warning','Onderhoud',`Onderhoud binnen 90 dagen`,`${r.object}: ${r.onderhoud_titel} op ${dateFmt(r.scope_inspectie_geldig_tot)}.`,r.id));
     }
 
-    if(energyDays!==null){
+    if(r.energielabel_verplicht&&energyDays!==null){
       if(energyDays<0) items.push(actionItem('danger','Energielabel',`Energielabel verlopen: ${r.object}`,`Geldig tot ${dateFmt(r.energielabel_geldig_tot)}.`,r.id));
       else if(energyDays<=60) items.push(actionItem('danger','Energielabel',`Energielabel binnen ${energyDays} dagen`,`${r.object}: geldig tot ${dateFmt(r.energielabel_geldig_tot)}.`,r.id));
       else if(energyDays<=180) items.push(actionItem('warning','Energielabel',`Energielabel binnen 180 dagen`,`${r.object}: geldig tot ${dateFmt(r.energielabel_geldig_tot)}.`,r.id));
@@ -2546,6 +2546,7 @@ function notificationItems(data){
   const allowedIds=new Set(data.map(item=>item.id));
   rawInspections.filter(row=>allowedIds.has(row.property_id)).forEach(row=>{
     const property=inspectionProperty(row);
+    if(isEnergyLabelInspection(row)&&property?.energielabel_verplicht===false) return;
     const status=inspectionDisplayStatus(row);
     const date=inspectionDeadline(row);
     const days=daysUntil(date);
@@ -2913,6 +2914,7 @@ const OBJECT_CSV_ALIASES={
   corporate_guarantee:['concerngarantie','concern garantie','corporate guarantee','corporate_guarantee'],
   bank_guarantee:['bankgarantie','bank garantie','bank guarantee','bank_guarantee'],
   energy_label:['energielabel','energy label','energy_label'],
+  energy_label_required:['energielabel verplicht','label verplicht','energy label required','energy_label_required'],
   energy_label_valid_until:['energielabel geldig tot','energy label valid until','energy_label_valid_until'],
   rent_increase_month:['maand huurverhogingen','maand huurverhoging','huurverhogingsmaand','rent increase month','rent_increase_month'],
   scope_valid_until:['scope 10 geldig tot','scope10 geldig tot','scope 10 geldig volgende','scope inspectie geldig tot','scope-inspectie geldig tot','scope geldig tot','scope_valid_until'],
@@ -3047,6 +3049,14 @@ function parseContractPeriodNumber(value,label){
   return Math.round(number);
 }
 
+function parseImportBoolean(value,label='keuze'){
+  const raw=norm(value);
+  if(!raw) return null;
+  if(['ja','yes','true','1','verplicht'].includes(raw)) return true;
+  if(['nee','no','false','0','niet verplicht','nvt','n.v.t.'].includes(raw)) return false;
+  throw new Error(`Ongeldige ${label}: ${value}`);
+}
+
 function parseObjectImportDate(value){
   const raw=clean(value);
   if(isMissingImportValue(raw) || isIndefiniteContractValue(raw)) return null;
@@ -3092,6 +3102,7 @@ function objectCsvRecords(rows){
       corporate_guarantee:csvCell(row,map,'corporate_guarantee'),
       bank_guarantee:csvCell(row,map,'bank_guarantee'),
       energy_label:csvCell(row,map,'energy_label'),
+      energy_label_required:csvCell(row,map,'energy_label_required'),
       energy_label_valid_until:csvCell(row,map,'energy_label_valid_until'),
       rent_increase_month:csvCell(row,map,'rent_increase_month'),
       scope_valid_until:csvCell(row,map,'scope_valid_until'),
@@ -3154,6 +3165,10 @@ function propertyPayloadFromCsv(record, isNew){
     }
     payload[field]=parseImportNumber(record[field],field);
   });
+  if(record.present.has('energy_label_required')){
+    const required=parseImportBoolean(record.energy_label_required,'waarde bij Energielabel verplicht');
+    if(required!==null) payload.energy_label_required=required;
+  }
   const dateFields=['energy_label_valid_until','scope_valid_until','purchase_date'];
   dateFields.forEach(field=>{
     if(record.present.has(field)) payload[field]=parseObjectImportDate(record[field]);
@@ -3171,6 +3186,7 @@ function propertyPayloadFromCsv(record, isNew){
     payload.property_type=payload.property_type || 'Vastgoedobject';
     payload.status=payload.status || 'Actief';
     if(payload.deposit===undefined) payload.deposit=0;
+    if(payload.energy_label_required===undefined) payload.energy_label_required=true;
   }
   return payload;
 }
@@ -3529,6 +3545,9 @@ function inspectionDeadline(row){
   return row.next_inspection_date||row.valid_until||null;
 }
 function inspectionDisplayStatus(row){
+  if(isEnergyLabelInspection(row)&&inspectionProperty(row)?.energielabel_verplicht===false){
+    return 'Niet van toepassing';
+  }
   const stored=clean(row.status)||'Nog te plannen';
   if(['Afgekeurd','Niet van toepassing','Ingepland','In behandeling','Nog te plannen'].includes(stored)) return stored;
   const days=daysUntil(inspectionDeadline(row));
@@ -3561,7 +3580,7 @@ function propertyEnergyLabelInspectionRows(data){
     .filter(property=>{
       const label=clean(property.energielabel);
       const hasLabel=label&&label!=='-';
-      return !manualPropertyIds.has(property.id)&&(hasLabel||property.energielabel_geldig_tot);
+      return !manualPropertyIds.has(property.id)&&(!property.energielabel_verplicht||hasLabel||property.energielabel_geldig_tot);
     })
     .map(property=>({
       id:`property-energy-label:${property.id}`,
@@ -3570,9 +3589,9 @@ function propertyEnergyLabelInspectionRows(data){
       inspection_date:null,
       valid_until:property.energielabel_geldig_tot||null,
       next_inspection_date:null,
-      status:property.energielabel_geldig_tot?'Geldig':'Nog te plannen',
+      status:property.energielabel_verplicht===false?'Niet van toepassing':(property.energielabel_geldig_tot?'Geldig':'Nog te plannen'),
       inspection_company:null,
-      certificate_number:clean(property.energielabel)&&property.energielabel!=='-'?`Label ${property.energielabel}`:null,
+      certificate_number:property.energielabel_verplicht===false?'Niet verplicht':(clean(property.energielabel)&&property.energielabel!=='-'?`Label ${property.energielabel}`:null),
       cost:0,
       notes:null,
       document_path:null,
@@ -3861,6 +3880,7 @@ function objectImportBackupRows(){
     r.hypotheekrente,
     r.aankoopdatum,
     r.energielabel==='-'?'':r.energielabel,
+    r.energielabel_verplicht?'Ja':'Nee',
     r.energielabel_geldig_tot,
     r.maand_huurverhoging,
     rawInspectionDateForBackup(r.id,'SCOPE 10',r.property?.scope_valid_until),
@@ -3884,7 +3904,7 @@ function objectFullBackupRows(){
       r.huurder==='-'?'':r.huurder,r.email,r.telefoon,r.huur_pm,r.huur_pj,r.servicekosten,
       r.energiekosten,r.waarborgsom,r.concerngarantie,r.bankgarantie,r.aankoopwaarde,r.woz_waarde,r.hypotheek,
       r.hypotheekrente,r.aankoopdatum,r.bruto_rendement===null?'':r.bruto_rendement,
-      r.energielabel==='-'?'':r.energielabel,r.energielabel_geldig_tot,
+      r.energielabel==='-'?'':r.energielabel,r.energielabel_verplicht?'Ja':'Nee',r.energielabel_geldig_tot,
       rawInspectionDateForBackup(r.id,'SCOPE 10',r.property?.scope_valid_until),scope10.status?.[0]||'',
       rawInspectionDateForBackup(r.id,'SCOPE 12'),scope12.status?.[0]||'',
       r.startdatum_contract,r.contract_onbepaalde?'Onbepaalde tijd':r.oorspronkelijke_einddatum_contract,
@@ -3933,12 +3953,12 @@ function downloadObjectBackup(){
       'Object-ID','Objectnaam','Straatnaam','Huisnummer','Postcode','Stad','Type pand','Objectstatus',
       'Huurder','E-mail huurder','Telefoon huurder','Maandhuur','Jaarhuur','Servicekosten',
       'Energiekosten','Waarborgsom','Concerngarantie','Bankgarantie','Aankoopwaarde','WOZ-waarde','Hypotheekschuld',
-      'Hypotheekrente','Aankoopdatum','Energielabel','Energielabel geldig tot','Maand huurverhoging',
+      'Hypotheekrente','Aankoopdatum','Energielabel','Energielabel verplicht','Energielabel geldig tot','Maand huurverhoging',
       'SCOPE 10 geldig tot','SCOPE 12 geldig tot','Startdatum contract','Einddatum contract',
       'Contractduur','Opzegtermijn maanden','Uiterste opzegdatum','Verlenging jaren','Contractstatus'
     ];
     const importRows=objectImportBackupRows();
-    const importNumeric=new Set([11,12,13,14,15,16,17,18,19,20,21,31,33]);
+    const importNumeric=new Set([11,12,13,14,15,16,17,18,19,20,21,32,34]);
     const importMoney=new Set([11,12,13,14,15,16,17,18,19,20]);
     const importPercent=new Set([21]);
 
@@ -3946,7 +3966,7 @@ function downloadObjectBackup(){
       'Object-ID','Objectnaam','Straatnaam','Huisnummer','Postcode','Stad','Type object','Objectstatus',
       'Huurder','E-mail huurder','Telefoon huurder','Huur per maand','Huur per jaar','Servicekosten',
       'Energiekosten','Waarborgsom','Concerngarantie','Bankgarantie','Aankoopwaarde','WOZ-waarde','Hypotheekschuld',
-      'Hypotheekrente (%)','Aankoopdatum','Bruto rendement (%)','Energielabel','Energielabel geldig tot',
+      'Hypotheekrente (%)','Aankoopdatum','Bruto rendement (%)','Energielabel','Energielabel verplicht','Energielabel geldig tot',
       'SCOPE 10 geldig tot','Status SCOPE 10','SCOPE 12 geldig tot','Status SCOPE 12',
       'Startdatum contract','Oorspronkelijke einddatum','Huidige einddatum','Opzegtermijn (maanden)',
       'Uiterste opzegdatum','Verlenging (jaren)','Aantal verlengingen','Contractstatus',
@@ -3954,8 +3974,8 @@ function downloadObjectBackup(){
       'Onderhoudsprioriteit'
     ];
     const fullRows=objectFullBackupRows();
-    const fullNumeric=new Set([11,12,13,14,15,16,17,18,19,20,21,23,33,35,36,42]);
-    const fullMoney=new Set([11,12,13,14,15,16,17,18,19,20,42]);
+    const fullNumeric=new Set([11,12,13,14,15,16,17,18,19,20,21,23,34,36,37,43]);
+    const fullMoney=new Set([11,12,13,14,15,16,17,18,19,20,43]);
     const fullPercent=new Set([21,23]);
 
     const generatedAt=new Date();
@@ -4204,7 +4224,7 @@ function buildAgendaEvents(data){
     if(!r.contract_onbepaalde&&r.einddatum_contract){
       addAgendaEvent(events,{date:r.einddatum_contract,type:'contract',title:r.contract_opgezegd?'Opgezegd contract eindigt':'Contract eindigt',subtitle:objectLine,objectId:r.id},seen);
     }
-    if(r.energielabel_geldig_tot){
+    if(r.energielabel_verplicht&&r.energielabel_geldig_tot){
       addAgendaEvent(events,{date:r.energielabel_geldig_tot,type:'energy',title:'Energielabel verloopt',subtitle:objectLine,objectId:r.id},seen);
     }
     if(r.scope_inspectie_geldig_tot){
@@ -4444,7 +4464,7 @@ function render(){
   el('urgentCount').textContent=notes.filter(n=>n.sev==='danger').length;
   el('contractSoon').textContent=data.filter(r=>{const d=r.contract_timeline?.noticeDays; return !r.contract_opgezegd && !r.contract_onbepaalde && d!==null && d>=0 && d<=365;}).length;
   if(el('maintenanceSoon')) el('maintenanceSoon').textContent=data.filter(r=>{const d=daysUntil(r.scope_inspectie_geldig_tot); return d!==null && d<=90;}).length;
-  if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return d!==null && d<=180;}).length;
+  if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return r.energielabel_verplicht&&d!==null&&d<=180;}).length;
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=notes.map(actionHtml).join('') || '<p>Geen meldingen gevonden.</p>';
@@ -4561,13 +4581,21 @@ function renderDetail(id){
   selectedPropertyId=id; const r=vastgoedData.find(x=>x.id===id); if(!r){ el('detailContent').innerHTML='<p>Object niet gevonden.</p>'; return; }
   const scope10=objectInspectionSummary(r.id,'SCOPE 10');
   const scope12=objectInspectionSummary(r.id,'SCOPE 12');
-  el('detailContent').innerHTML=`${photoBox(r.foto_url,'detailPhoto',`Foto van ${r.object}`)}<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel',r.energielabel)}${kv('Energielabel geldig tot',dateFmt(r.energielabel_geldig_tot))}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  el('detailContent').innerHTML=`${photoBox(r.foto_url,'detailPhoto',`Foto van ${r.object}`)}<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
   setPage('detail', r.object);
   refreshPhotos();
 }
 function kv(label,value){return `<div class="kv"><span>${label}</span><strong>${value}</strong></div>`}
 function openNewProperty(){ selectedPropertyId=null; el('modalTitle').textContent='Nieuw object'; el('propertyForm').reset(); ['propertyId','tenantId','contractId','maintenanceId'].forEach(id=>el(id).value=''); el('propertyStatus').value='Actief'; el('contractStatus').value='Actief'; if(el('contractNoticePeriodMonths')) el('contractNoticePeriodMonths').value='12'; if(el('contractNoticeDate')) el('contractNoticeDate').dataset.autoCalculated='true'; if(el('contractRenewalPeriodYears')) el('contractRenewalPeriodYears').value=''; el('maintenanceStatus').value='Te plannen'; el('maintenancePriority').value='Normaal'; if(el('propertyPhotoFile')) el('propertyPhotoFile').value=''; el('deletePropertyBtn').classList.add('hidden'); el('formMessage').textContent=''; el('propertyModal').classList.remove('hidden'); }
-function openEditProperty(id){ const r=vastgoedData.find(x=>x.id===id); if(!r)return; const p=r.property,c=r.contract||{},t=r.tenant||{},m=r.maintenance||{}; el('modalTitle').textContent='Object bewerken'; el('propertyId').value=p.id||''; el('tenantId').value=t.id||''; el('contractId').value=c.id||''; el('maintenanceId').value=m.id||''; el('propertyName').value=p.name||''; el('propertyAddress').value=p.address||''; el('propertyHouseNumber').value=p.house_number||''; el('propertyPostalCode').value=p.postal_code||''; el('propertyCity').value=p.city||''; el('propertyType').value=p.property_type||''; el('propertyStatus').value=p.status||'Actief'; el('propertyMonthlyRent').value=p.monthly_rent||''; el('propertyYearlyRent').value=p.yearly_rent||''; el('propertyServiceCosts').value=p.service_costs||''; el('propertyEnergyCosts').value=p.energy_costs||''; el('propertyDeposit').value=p.deposit||''; el('propertyCorporateGuarantee').value=p.corporate_guarantee||''; el('propertyBankGuarantee').value=p.bank_guarantee||''; el('propertyEnergyLabel').value=p.energy_label||''; el('propertyEnergyValidUntil').value=p.energy_label_valid_until||''; el('propertyRentIncreaseMonth').value=p.rent_increase_month||'';
+function updateEnergyLabelRequirementFields(){
+  const required=el('propertyEnergyLabelRequired')?.value!=='Nee';
+  const labelInput=el('propertyEnergyLabel');
+  const dateInput=el('propertyEnergyValidUntil');
+  if(labelInput) labelInput.disabled=!required;
+  if(dateInput) dateInput.disabled=!required;
+}
+
+function openEditProperty(id){ const r=vastgoedData.find(x=>x.id===id); if(!r)return; const p=r.property,c=r.contract||{},t=r.tenant||{},m=r.maintenance||{}; el('modalTitle').textContent='Object bewerken'; el('propertyId').value=p.id||''; el('tenantId').value=t.id||''; el('contractId').value=c.id||''; el('maintenanceId').value=m.id||''; el('propertyName').value=p.name||''; el('propertyAddress').value=p.address||''; el('propertyHouseNumber').value=p.house_number||''; el('propertyPostalCode').value=p.postal_code||''; el('propertyCity').value=p.city||''; el('propertyType').value=p.property_type||''; el('propertyStatus').value=p.status||'Actief'; el('propertyMonthlyRent').value=p.monthly_rent||''; el('propertyYearlyRent').value=p.yearly_rent||''; el('propertyServiceCosts').value=p.service_costs||''; el('propertyEnergyCosts').value=p.energy_costs||''; el('propertyDeposit').value=p.deposit||''; el('propertyCorporateGuarantee').value=p.corporate_guarantee||''; el('propertyBankGuarantee').value=p.bank_guarantee||''; el('propertyEnergyLabelRequired').value=p.energy_label_required===false?'Nee':'Ja'; el('propertyEnergyLabel').value=p.energy_label||''; el('propertyEnergyValidUntil').value=p.energy_label_valid_until||''; updateEnergyLabelRequirementFields(); el('propertyRentIncreaseMonth').value=p.rent_increase_month||'';
   const scope10Inspection=inspectionsForProperty(r.id,'SCOPE 10')[0];
   el('propertyScopeValidUntil').value=inspectionDeadline(scope10Inspection)||p.scope_valid_until||''; if(el('propertyPurchaseValue')) el('propertyPurchaseValue').value=p.purchase_value||''; if(el('propertyWozValue')) el('propertyWozValue').value=p.woz_value||''; if(el('propertyMortgageValue')) el('propertyMortgageValue').value=p.mortgage_value||''; if(el('propertyMortgageInterest')) el('propertyMortgageInterest').value=p.mortgage_interest||''; if(el('propertyPurchaseDate')) el('propertyPurchaseDate').value=p.purchase_date||''; if(el('propertyPhotoUrl')) el('propertyPhotoUrl').value=p.photo_url||''; if(el('propertyPhotoFile')) el('propertyPhotoFile').value=''; el('tenantName').value=t.name||''; el('tenantEmail').value=t.email||''; el('tenantPhone').value=t.phone||''; el('contractStartDate').value=c.start_date||''; el('contractEndDate').value=c.end_date||''; if(el('contractNoticePeriodMonths')) el('contractNoticePeriodMonths').value=c.notice_period_months??''; el('contractNoticeDate').value=c.notice_date||r.contract_timeline?.calculatedInitialNotice||''; el('contractNoticeDate').dataset.autoCalculated=c.notice_date?'false':'true'; if(el('contractRenewalPeriodYears')) el('contractRenewalPeriodYears').value=c.renewal_period_years??''; el('contractStatus').value=canonicalContractStatus(c.status); el('maintenanceTitle').value=m.title||''; el('maintenancePlannedDate').value=m.planned_date||''; el('maintenanceCost').value=m.cost||''; el('maintenancePriority').value=m.priority||'Normaal'; el('maintenanceStatus').value=maintenanceStatusLabel(m.status); el('maintenanceDescription').value=m.description||''; el('deletePropertyBtn').classList.remove('hidden'); el('formMessage').textContent=''; el('propertyModal').classList.remove('hidden'); }
 window.openEditProperty=openEditProperty;
@@ -4684,7 +4712,7 @@ async function saveProperty(e){
   e.preventDefault();
   syncYearlyRentFromMonthly(); el('formMessage').textContent='Bezig met opslaan...';
   const propertyId=el('propertyId').value, tenantId=el('tenantId').value, contractId=el('contractId').value, maintenanceId=el('maintenanceId').value;
-  const propertyPayload={name:el('propertyName').value,address:el('propertyAddress').value||null,house_number:el('propertyHouseNumber').value||null,postal_code:clean(el('propertyPostalCode').value).toUpperCase()||null,city:el('propertyCity').value||null,property_type:el('propertyType').value||null,status:el('propertyStatus').value||'Actief',monthly_rent:numOrNull(el('propertyMonthlyRent').value),yearly_rent:numOrNull(el('propertyYearlyRent').value),service_costs:numOrNull(el('propertyServiceCosts').value),energy_costs:numOrNull(el('propertyEnergyCosts').value),deposit:numOrNull(el('propertyDeposit').value),corporate_guarantee:numOrNull(el('propertyCorporateGuarantee').value),bank_guarantee:numOrNull(el('propertyBankGuarantee').value),energy_label:el('propertyEnergyLabel').value||null,energy_label_valid_until:el('propertyEnergyValidUntil').value||null,rent_increase_month:el('propertyRentIncreaseMonth').value||null,scope_valid_until:el('propertyScopeValidUntil').value||null,purchase_value:numOrNull(el('propertyPurchaseValue')?.value||''),woz_value:numOrNull(el('propertyWozValue')?.value||''),mortgage_value:numOrNull(el('propertyMortgageValue')?.value||''),mortgage_interest:numOrNull(el('propertyMortgageInterest')?.value||''),purchase_date:el('propertyPurchaseDate')?.value||null,photo_url:el('propertyPhotoUrl')?.value||null};
+  const propertyPayload={name:el('propertyName').value,address:el('propertyAddress').value||null,house_number:el('propertyHouseNumber').value||null,postal_code:clean(el('propertyPostalCode').value).toUpperCase()||null,city:el('propertyCity').value||null,property_type:el('propertyType').value||null,status:el('propertyStatus').value||'Actief',monthly_rent:numOrNull(el('propertyMonthlyRent').value),yearly_rent:numOrNull(el('propertyYearlyRent').value),service_costs:numOrNull(el('propertyServiceCosts').value),energy_costs:numOrNull(el('propertyEnergyCosts').value),deposit:numOrNull(el('propertyDeposit').value),corporate_guarantee:numOrNull(el('propertyCorporateGuarantee').value),bank_guarantee:numOrNull(el('propertyBankGuarantee').value),energy_label_required:el('propertyEnergyLabelRequired').value!=='Nee',energy_label:el('propertyEnergyLabel').value||null,energy_label_valid_until:el('propertyEnergyValidUntil').value||null,rent_increase_month:el('propertyRentIncreaseMonth').value||null,scope_valid_until:el('propertyScopeValidUntil').value||null,purchase_value:numOrNull(el('propertyPurchaseValue')?.value||''),woz_value:numOrNull(el('propertyWozValue')?.value||''),mortgage_value:numOrNull(el('propertyMortgageValue')?.value||''),mortgage_interest:numOrNull(el('propertyMortgageInterest')?.value||''),purchase_date:el('propertyPurchaseDate')?.value||null,photo_url:el('propertyPhotoUrl')?.value||null};
   const propRes=await upsertEntity('properties',propertyId,propertyPayload); if(propRes.error){el('formMessage').textContent=propRes.error.message;return;} const savedProperty=propRes.data;
   try{
     await syncScope10InspectionFromProperty(savedProperty.id,el('propertyScopeValidUntil').value||null);
@@ -4852,6 +4880,7 @@ function init(){
   el('serviceFinalAdvance')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceFinalActual')?.addEventListener('input',updateServiceCostModalCalculation);
   el('serviceCostLetterBtn')?.addEventListener('click',openServiceCostLetter);
+  el('propertyEnergyLabelRequired')?.addEventListener('change',updateEnergyLabelRequirementFields);
   el('propertyMonthlyRent')?.addEventListener('input',syncYearlyRentFromMonthly);
   el('downloadObjectBackupBtn')?.addEventListener('click',downloadObjectBackup);
   el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); });
