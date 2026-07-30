@@ -541,13 +541,20 @@ function proposalFor(contractId,effectiveDate){
   return rawRentIncreaseProposals.find(p=>p.contract_id===contractId&&p.effective_date===effectiveDate)||null;
 }
 
+function calculateIndexedAmount(amount,oldIndex,newIndex){
+  const base=Number(amount),oldValue=Number(oldIndex),newValue=Number(newIndex);
+  if(!Number.isFinite(base)||base<0||!Number.isFinite(oldValue)||oldValue<=0||!Number.isFinite(newValue)||newValue<=0) return null;
+  return Math.round((base*(newValue/oldValue))*100)/100;
+}
+
 function calculateRentValues(currentRent,oldIndex,newIndex){
   const current=Number(currentRent),oldValue=Number(oldIndex),newValue=Number(newIndex);
   if(!Number.isFinite(current)||current<=0||!Number.isFinite(oldValue)||oldValue<=0||!Number.isFinite(newValue)||newValue<=0){
-    return {percentage:null,rent:null};
+    return {percentage:null,rent:null,serviceCosts:null,total:null};
   }
   const percentage=((newValue/oldValue)-1)*100;
-  return {percentage,rent:Math.round((current*(newValue/oldValue))*100)/100};
+  const rent=calculateIndexedAmount(current,oldValue,newValue);
+  return {percentage,rent,serviceCosts:null,total:rent};
 }
 
 function rentRowContext(r){
@@ -557,6 +564,9 @@ function rentRowContext(r){
   const oldCpi=periods.oldDate?cbsIndexCache.values.get(monthKeyFromIso(periods.oldDate)):null;
   const proposal=effectiveDate?proposalFor(r.contract?.id,effectiveDate):null;
   const calculated=calculateRentValues(r.huur_pm,proposal?.old_index??oldCpi?.value,proposal?.new_index??newCpi?.value);
+  const indexedServiceCosts=calculateIndexedAmount(r.servicekosten,proposal?.old_index??oldCpi?.value,proposal?.new_index??newCpi?.value);
+  calculated.serviceCosts=indexedServiceCosts;
+  calculated.total=calculated.rent===null?null:Math.round(((calculated.rent||0)+(indexedServiceCosts||0))*100)/100;
   return {r,effectiveDate,periods,newCpi,oldCpi,proposal,calculated};
 }
 
@@ -644,6 +654,8 @@ function openRentIncreaseModal(propertyId,effectiveDate){
   el('rentIncreaseModalMeta').textContent=`${r.huurder} · ${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')}`;
   el('rentCurrentRent').textContent=euro2(r.huur_pm);
   el('rentServiceCosts').textContent=euro2(r.servicekosten);
+  el('rentCalculatedServiceCosts').textContent='-';
+  el('rentCalculatedTotal').textContent='-';
   el('rentEffectiveDate').value=targetDate||'';
   el('rentProposalStatus').value=proposal?.status==='Goedgekeurd'?'Goedgekeurd':'Concept';
   el('rentOldPeriod').value=longMonthYear(periods.oldDate);
@@ -679,9 +691,13 @@ function updateRentModalCalculation(){
   const oldIndex=Number(el('rentOldIndex').value);
   const newIndex=Number(el('rentNewIndex').value);
   const calculated=calculateRentValues(activeRentContext.r.huur_pm,oldIndex,newIndex);
+  const indexedServiceCosts=calculateIndexedAmount(activeRentContext.r.servicekosten,oldIndex,newIndex);
+  const total=calculated.rent===null?null:Math.round(((calculated.rent||0)+(indexedServiceCosts||0))*100)/100;
   el('rentCalculatedPercentage').textContent=calculated.percentage===null?'-':`${calculated.percentage.toFixed(2).replace('.',',')}%`;
   el('rentCalculatedRent').textContent=calculated.rent===null?'-':euro2(calculated.rent);
   el('rentCalculatedRent').dataset.value=calculated.rent??'';
+  el('rentCalculatedServiceCosts').textContent=indexedServiceCosts===null?'-':euro2(indexedServiceCosts);
+  el('rentCalculatedTotal').textContent=total===null?'-':euro2(total);
   if(calculated.rent!==null&&(!el('rentFinalRent').value||el('rentFinalRent').dataset.autoCalculated==='true')){
     el('rentFinalRent').value=calculated.rent.toFixed(2);
     el('rentFinalRent').dataset.autoCalculated='true';
@@ -911,7 +927,7 @@ async function applyRentIncrease(){
     const proposal=await persistRentProposal();
     const result=await sb.rpc('apply_rent_increase',{p_proposal_id:proposal.id});
     if(result.error) throw result.error;
-    message.textContent='Huurverhoging verwerkt en opgenomen in de huurhistorie.';
+    message.textContent='Huurverhoging verwerkt: maandhuur en servicekosten zijn apart bijgewerkt en opgenomen in de huurhistorie.';
     await loadData();
     closeRentIncreaseModal();
     setPage('financieel','Financieel');
