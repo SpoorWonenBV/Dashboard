@@ -1406,3 +1406,69 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
     padding-bottom:max(300px,calc(100vh - 150px));
   }
 }
+
+
+/* v40.31: Huurverhogingen gesplitst in Woningen en Overig vastgoed */
+.rentPropertyTabs{
+  display:flex;
+  gap:8px;
+  margin:0 0 12px;
+  padding:6px;
+  width:max-content;
+  max-width:100%;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+.rentPropertyTab{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#475569;
+  padding:10px 16px;
+  font:inherit;
+  font-weight:800;
+  cursor:pointer;
+}
+.rentPropertyTab span{
+  display:inline-flex;
+  min-width:24px;
+  height:24px;
+  align-items:center;
+  justify-content:center;
+  padding:0 7px;
+  border-radius:999px;
+  background:#e2e8f0;
+  color:#334155;
+  font-size:12px;
+}
+.rentPropertyTab.active{
+  background:#172033;
+  color:#fff;
+}
+.rentPropertyTab.active span{
+  background:rgba(255,255,255,.18);
+  color:#fff;
+}
+.rentPropertyGroupNotice{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin:0 0 14px;
+  padding:13px 15px;
+  border:1px solid #dbe4ef;
+  border-radius:12px;
+  background:#f8fafc;
+  color:#475569;
+  font-size:13px;
+}
+.rentPropertyGroupNotice strong{color:#172033}
+.rentSkipBtn{white-space:nowrap}
+@media(max-width:700px){
+  .rentPropertyTabs{width:100%}
+  .rentPropertyTab{flex:1;justify-content:center;padding:10px 8px}
+}

@@ -204,6 +204,15 @@
             </div>
             <button id="refreshCbsBtn" class="secondaryBtn" type="button">CBS-cijfers vernieuwen</button>
           </div>
+          <div class="rentPropertyTabs" role="tablist" aria-label="Soort vastgoed voor huurverhogingen">
+            <button class="rentPropertyTab active" type="button" data-rent-property-group="residential" role="tab" aria-selected="true">
+              Woningen <span id="rentResidentialCount">0</span>
+            </button>
+            <button class="rentPropertyTab" type="button" data-rent-property-group="other" role="tab" aria-selected="false">
+              Bedrijfsmatig vastgoed <span id="rentOtherCount">0</span>
+            </button>
+          </div>
+          <div id="rentPropertyGroupNotice" class="rentPropertyGroupNotice"></div>
           <p id="financialMessage" class="formMessage financialMessage"></p>
           <div id="financialOverview"></div>
           <div class="panel financialTablePanel">
@@ -696,6 +705,7 @@
         <div id="rentCbsWarning" class="rentCbsWarning hidden"></div>
         <div class="formActions rentFormActions">
           <button type="button" id="rentLetterBtn" class="secondaryBtn">Conceptbrief bekijken</button>
+          <button type="button" id="skipRentIncreaseBtn" class="secondaryBtn">Niet verhogen dit jaar</button>
           <button type="button" id="applyRentIncreaseBtn" class="secondaryBtn hidden">Markeren als verwerkt</button>
           <button type="submit">Concept opslaan</button>
         </div>

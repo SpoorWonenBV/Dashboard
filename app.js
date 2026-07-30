@@ -637,9 +637,12 @@ function renderFinancialOverview(data){
       : '<strong>Bedrijfsmatig vastgoed</strong><span>Hier staan winkels, kantoren, bedrijfsruimten en alle overige typen vastgoed.</span>';
   }
 
-  const eligible=allEligible.filter(r=>
-    activeRentPropertyGroup==='residential' ? isResidentialProperty(r) : !isResidentialProperty(r)
-  );
+  const hasPropertyGroupTabs=document.querySelectorAll('.rentPropertyTab').length>=2;
+  const eligible=hasPropertyGroupTabs
+    ? allEligible.filter(r=>
+        activeRentPropertyGroup==='residential' ? isResidentialProperty(r) : !isResidentialProperty(r)
+      )
+    : allEligible;
   const contexts=eligible.map(rentRowContext);
   const soon=contexts.filter(c=>{const d=daysUntil(c.effectiveDate);return d!==null&&d>=0&&d<=90;}).length;
   const concepts=contexts.filter(c=>c.proposal?.status==='Concept').length;
