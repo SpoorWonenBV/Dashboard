@@ -2574,14 +2574,6 @@ function renderCharts(data){
   if(el('contractChart')) el('contractChart').innerHTML = buckets.map(b=>chartBar(b,data.filter(r=>contractBucket(r)===b).length,data.length)).join('');
   const yieldValues=data.map(r=>Number(r.bruto_rendement)).filter(Number.isFinite);
   if(el('avgYield')) el('avgYield').textContent = yieldValues.length ? pct(yieldValues.reduce((a,b)=>a+b,0)/yieldValues.length) : '-';
-  const totalPurchase=data.reduce((a,b)=>a+Number(b.aankoopwaarde||0),0);
-  const totalWoz=data.reduce((a,b)=>a+Number(b.woz_waarde||0),0);
-  const totalMortgage=data.reduce((a,b)=>a+Number(b.hypotheek||0),0);
-  const totalEquity=totalWoz-totalMortgage;
-  if(el('totalPurchaseValue')) el('totalPurchaseValue').textContent=euro(totalPurchase);
-  if(el('totalWozValue')) el('totalWozValue').textContent=euro(totalWoz);
-  if(el('totalMortgageValue')) el('totalMortgageValue').textContent=euro(totalMortgage);
-  if(el('totalEquityValue')) el('totalEquityValue').textContent=euro(totalEquity);
 }
 
 const MAINTENANCE_STATUSES=['Te plannen','Gepland','Afgerond'];
@@ -4459,8 +4451,6 @@ function render(){
   renderContractFilters(data);
   renderCharts(data);
   el('totalObjects').textContent=data.length;
-  el('totalMonthlyRent').textContent=euro(data.reduce((a,b)=>a+Number(b.huur_pm||0),0));
-  el('totalRent').textContent=euro(data.reduce((a,b)=>a+Number(b.huur_pj||0),0));
   el('urgentCount').textContent=notes.filter(n=>n.sev==='danger').length;
   el('contractSoon').textContent=data.filter(r=>{const d=r.contract_timeline?.noticeDays; return !r.contract_opgezegd && !r.contract_onbepaalde && d!==null && d>=0 && d<=365;}).length;
   if(el('maintenanceSoon')) el('maintenanceSoon').textContent=data.filter(r=>{const d=daysUntil(r.scope_inspectie_geldig_tot); return d!==null && d<=90;}).length;
