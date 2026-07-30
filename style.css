@@ -1394,3 +1394,15 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
 @media(max-width:900px){
   .contractFloatingHeader{z-index:19}
 }
+
+
+/* v40.29: extra scrollruimte onder Contracten
+   Hierdoor kan ook de onderste contractregel direct onder de vaste kop worden bekeken. */
+#contracten{
+  padding-bottom:max(360px,calc(100vh - 170px));
+}
+@media(max-width:700px){
+  #contracten{
+    padding-bottom:max(300px,calc(100vh - 150px));
+  }
+}

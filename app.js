@@ -4226,13 +4226,13 @@ function setupContractStickyHeader(){
 
     const pageActive=contractsPage.classList.contains('active');
     const sourceRect=sourceHeader.getBoundingClientRect();
-    const tableRect=table.getBoundingClientRect();
     const wrapRect=wrap.getBoundingClientRect();
+    const pageRect=contractsPage.getBoundingClientRect();
     const headerHeight=Math.max(sourceRect.height,48);
     const shouldShow=
       pageActive &&
       sourceRect.bottom<=0 &&
-      tableRect.bottom>headerHeight &&
+      pageRect.bottom>headerHeight &&
       wrapRect.right>0 &&
       wrapRect.left<window.innerWidth;
 
