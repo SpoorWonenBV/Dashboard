@@ -1,115 +1,39 @@
-'use strict';
-
-const SUPABASE_URL='https://oplujvnyutmxfpdewezb.supabase.co';
-const SUPABASE_KEY='sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
-const token=new URLSearchParams(window.location.search).get('token')||'';
-
-const byId=id=>document.getElementById(id);
-const show=(id,visible=true)=>byId(id)?.classList.toggle('hidden',!visible);
-
-async function rpc(name,payload){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`,{
-    method:'POST',
-    mode:'cors',
-    credentials:'omit',
-    cache:'no-store',
-    referrerPolicy:'no-referrer',
-    headers:{
-      apikey:SUPABASE_KEY,
-      Authorization:`Bearer ${SUPABASE_KEY}`,
-      'Content-Type':'application/json',
-      Accept:'application/json'
-    },
-    body:JSON.stringify(payload)
-  });
-
-  let data=null;
-  const text=await response.text();
-  if(text){
-    try{data=JSON.parse(text);}
-    catch(error){data=text;}
-  }
-
-  if(!response.ok){
-    const message=data?.message||data?.hint||'De melding kon niet worden verwerkt.';
-    throw new Error(message);
-  }
-  return data;
+*{box-sizing:border-box}
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#eef2f6}
+body{margin:0;min-height:100vh;background:linear-gradient(145deg,#eef2f6,#dfe8f1)}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+.reportShell{min-height:100vh;display:grid;place-items:center;padding:24px}
+.reportCard{width:min(760px,100%);background:#fff;border:1px solid #dce4ed;border-radius:24px;padding:26px;box-shadow:0 24px 70px rgba(15,23,42,.12)}
+.reportHeader{display:flex;gap:16px;align-items:flex-start;margin-bottom:22px}
+.reportMark{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:#172033;color:#fff;font-size:28px;font-weight:900;flex:0 0 auto}
+.eyebrow{margin:0 0 5px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-size:12px;font-weight:800}
+h1{margin:0;font-size:clamp(28px,5vw,40px)}
+.propertyLine{margin:7px 0 0;color:#475569;line-height:1.45}
+.stateBox,.emergencyNotice,.successBox{border-radius:14px;padding:15px;border:1px solid #dbe4ef;background:#f8fafc;color:#475569}
+.stateBox.error{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+.stateBox span,.emergencyNotice span{display:block;margin-top:4px}
+.emergencyNotice{margin-bottom:18px;border-color:#fed7aa;background:#fff7ed;color:#9a3412}
+label{display:block;margin-bottom:15px;color:#334155;font-size:13px;font-weight:800}
+input,select,textarea{width:100%;margin-top:7px;padding:12px 13px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#172033}
+textarea{resize:vertical;min-height:150px}
+input:focus,select:focus,textarea:focus{outline:3px solid rgba(23,32,51,.12);border-color:#172033}
+.fieldGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fieldHelp{display:block;margin-top:5px;color:#64748b;font-size:11px;font-weight:500}
+.privacyCheck{display:flex;align-items:flex-start;gap:10px}
+.privacyCheck input{width:18px;height:18px;margin:1px 0 0;flex:0 0 auto}
+.privacyCheck span{font-weight:600;line-height:1.4}
+button{width:100%;border:0;border-radius:12px;padding:13px 16px;background:#172033;color:#fff;font-weight:900;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.formMessage{min-height:20px;margin:12px 0 0;color:#b42318;font-size:13px;font-weight:700}
+.websiteField{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
+.successBox{text-align:center;border-color:#bbf7d0;background:#f0fdf4;color:#166534}
+.successBox h2{margin:9px 0}
+.successIcon{width:52px;height:52px;border-radius:50%;margin:auto;display:grid;place-items:center;background:#166534;color:#fff;font-size:28px;font-weight:900}
+@media(max-width:640px){
+  .reportShell{padding:12px}
+  .reportCard{padding:19px;border-radius:18px}
+  .fieldGrid{grid-template-columns:1fr}
+  .reportHeader{gap:12px}
+  .reportMark{width:42px;height:42px}
 }
-
-async function loadPortal(){
-  if(!token||token.length>80){
-    show('reportLoading',false);
-    show('reportInvalid',true);
-    return;
-  }
-
-  try{
-    const rows=await rpc('get_property_issue_portal',{p_token:token});
-    const portal=Array.isArray(rows)?rows[0]:rows;
-    if(!portal){
-      show('reportLoading',false);
-      show('reportInvalid',true);
-      return;
-    }
-
-    const address=[portal.address_line,portal.postal_city].filter(Boolean).join(' · ');
-    byId('reportProperty').textContent=[portal.object_name,address].filter(Boolean).join(' — ');
-    show('reportLoading',false);
-    show('issueReportForm',true);
-  }catch(error){
-    console.error(error);
-    show('reportLoading',false);
-    show('reportInvalid',true);
-  }
-}
-
-async function submitIssue(event){
-  event.preventDefault();
-  const button=byId('issueSubmitBtn');
-  const message=byId('issueFormMessage');
-  message.textContent='';
-
-  const description=byId('issueDescription').value.trim();
-  if(description.length<10){
-    message.textContent='Beschrijf de melding in minimaal 10 tekens.';
-    byId('issueDescription').focus();
-    return;
-  }
-  if(!byId('issuePrivacy').checked){
-    message.textContent='Bevestig dat de contactgegevens voor de afhandeling gebruikt mogen worden.';
-    return;
-  }
-
-  button.disabled=true;
-  button.textContent='Melding wordt verstuurd…';
-
-  try{
-    const reportId=await rpc('submit_property_issue',{
-      p_token:token,
-      p_category:byId('issueCategory').value,
-      p_description:description,
-      p_urgency:byId('issueUrgency').value,
-      p_reporter_name:byId('issueReporterName').value.trim()||null,
-      p_email:byId('issueEmail').value.trim()||null,
-      p_phone:byId('issuePhone').value.trim()||null,
-      p_availability:byId('issueAvailability').value.trim()||null,
-      p_privacy_accepted:true,
-      p_honeypot:byId('issueWebsite').value
-    });
-
-    const value=Array.isArray(reportId)?reportId[0]:reportId;
-    byId('reportReference').textContent=String(value||'').replaceAll('"','').slice(0,8).toUpperCase()||'AANGEMAAKT';
-    show('issueReportForm',false);
-    show('reportSuccess',true);
-  }catch(error){
-    console.error(error);
-    message.textContent=error.message||'De melding kon niet worden verstuurd. Probeer het later opnieuw.';
-  }finally{
-    button.disabled=false;
-    button.textContent='Melding versturen';
-  }
-}
-
-byId('issueReportForm')?.addEventListener('submit',submitIssue);
-loadPortal();
