@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', notificationTypeFilter = '', taskStatusFilter = 'open', taskPriorityFilter = '', taskObjectFilter = '', taskDateFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawTasks = [], tasksReady = true, rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
+let sb, query = '', notificationTypeFilter = '', taskStatusFilter = 'open', taskPriorityFilter = '', taskObjectFilter = '', taskDateFilter = '', tenantReportStatusFilter = 'open', tenantReportUrgencyFilter = '', tenantReportObjectFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawTasks = [], tasksReady = true, rawIssuePortals = [], issuePortalsReady = true, rawTenantIssueReports = [], tenantIssueReportsReady = true, activeIssueQrPropertyId = null, rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -2653,7 +2653,7 @@ function initSidebar(){
 }
 
 function setMaintenanceTab(tab){
-  activeMaintenanceTab=tab==='inspections'?'inspections':'maintenance';
+  activeMaintenanceTab=['inspections','reports'].includes(tab)?tab:'maintenance';
 
   document.querySelectorAll('.maintenanceTab').forEach(button=>{
     const active=button.dataset.maintenanceTab===activeMaintenanceTab;
@@ -2663,6 +2663,7 @@ function setMaintenanceTab(tab){
 
   el('maintenanceMainPanel')?.classList.toggle('active',activeMaintenanceTab==='maintenance');
   el('maintenanceInspectionPanel')?.classList.toggle('active',activeMaintenanceTab==='inspections');
+  el('maintenanceReportPanel')?.classList.toggle('active',activeMaintenanceTab==='reports');
 
   const maintenanceCsvButton=el('chooseMaintenanceCsvBtn');
   if(maintenanceCsvButton){
@@ -2671,6 +2672,7 @@ function setMaintenanceTab(tab){
   }
 
   if(activeMaintenanceTab==='inspections') renderInspections(filtered());
+  else if(activeMaintenanceTab==='reports') renderTenantIssueReports();
   else renderMaintenanceOverview(filtered());
 }
 
@@ -2764,7 +2766,7 @@ async function checkSession(){
 }
 async function loadData(){
   try{
-    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr,tsk]=await Promise.all([
+    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr,tsk,ipr,tir]=await Promise.all([
       sb.from('properties').select('*').order('created_at',{ascending:false}),
       sb.from('contracts').select('*'),
       sb.from('tenants').select('*'),
@@ -2777,7 +2779,9 @@ async function loadData(){
       sb.from('email_notification_log').select('*').order('created_at',{ascending:false}).limit(20),
       sb.from('property_inspections').select('*').order('valid_until',{ascending:true}),
       sb.from('property_data_check_overrides').select('*').order('updated_at',{ascending:false}),
-      sb.from('property_tasks').select('*').order('created_at',{ascending:false})
+      sb.from('property_tasks').select('*').order('created_at',{ascending:false}),
+      sb.from('property_issue_portals').select('*').order('created_at',{ascending:false}),
+      sb.from('tenant_issue_reports').select('*').order('submitted_at',{ascending:false})
     ]);
     [pr,cr,tr,mr,dr,hr].forEach(r=>{if(r.error) throw r.error});
     rawProperties=pr.data||[]; rawContracts=cr.data||[]; rawTenants=tr.data||[]; rawMaintenance=mr.data||[]; rawDocuments=dr.data||[]; rawMaintenanceHistory=hr.data||[];
@@ -2834,6 +2838,22 @@ async function loadData(){
     }else{
       rawTasks=tsk.data||[];
       tasksReady=true;
+    }
+    if(ipr.error){
+      console.warn('QR-portalen nog niet beschikbaar:',ipr.error.message);
+      rawIssuePortals=[];
+      issuePortalsReady=false;
+    }else{
+      rawIssuePortals=ipr.data||[];
+      issuePortalsReady=true;
+    }
+    if(tir.error){
+      console.warn('Huurdersmeldingen nog niet beschikbaar:',tir.error.message);
+      rawTenantIssueReports=[];
+      tenantIssueReportsReady=false;
+    }else{
+      rawTenantIssueReports=tir.data||[];
+      tenantIssueReportsReady=true;
     }
     vastgoedData=normalize(rawProperties, rawContracts, rawTenants, rawMaintenance, rawDocuments, rawMaintenanceHistory);
     el('statusText').textContent=`Live data uit Supabase. Laatst geladen: ${new Date().toLocaleTimeString('nl-NL')}`;
@@ -2946,6 +2966,20 @@ function notificationItems(data){
       }else{
         items.push(actionItem('warning','Taak',`Taak binnen ${days} dagen: ${task.title}`,`Deadline ${dateFmt(task.due_date)}${objectText}.`,null,task.id));
       }
+    });
+
+  rawTenantIssueReports
+    .filter(report=>tenantReportIsOpen(report))
+    .forEach(report=>{
+      const property=tenantReportProperty(report);
+      const objectText=property?` · ${property.object}`:'';
+      items.push(actionItem(
+        report.urgency==='Spoed'?'danger':'warning',
+        'Huurdersmelding',
+        `${report.category}${objectText}`,
+        `${report.description.slice(0,180)}${report.description.length>180?'…':''}`,
+        property?.id||null
+      ));
     });
 
   const score={danger:0,warning:1,ok:2};
@@ -3707,6 +3741,427 @@ function renderCharts(data){
   if(el('contractChart')) el('contractChart').innerHTML = buckets.map(b=>chartBar(b,data.filter(r=>contractBucket(r)===b).length,data.length)).join('');
   const yieldValues=data.map(r=>Number(r.bruto_rendement)).filter(Number.isFinite);
   if(el('avgYield')) el('avgYield').textContent = yieldValues.length ? pct(yieldValues.reduce((a,b)=>a+b,0)/yieldValues.length) : '-';
+}
+
+const TENANT_REPORT_STATUSES=['Nieuw','In behandeling','Omgezet naar onderhoud','Afgerond','Afgewezen'];
+const TENANT_REPORT_URGENCIES=['Normaal','Hoog','Spoed'];
+
+function issuePortalForProperty(propertyId){
+  return rawIssuePortals.find(portal=>portal.property_id===propertyId)||null;
+}
+
+async function ensureIssuePortal(propertyId){
+  const existing=issuePortalForProperty(propertyId);
+  if(existing) return existing;
+  if(!issuePortalsReady) throw new Error('Voer eerst het meegeleverde Supabase SQL-bestand uit.');
+
+  const result=await sb
+    .from('property_issue_portals')
+    .insert({property_id:propertyId})
+    .select('*')
+    .single();
+
+  if(result.error){
+    const retry=await sb
+      .from('property_issue_portals')
+      .select('*')
+      .eq('property_id',propertyId)
+      .maybeSingle();
+    if(retry.error||!retry.data) throw result.error;
+    rawIssuePortals.push(retry.data);
+    return retry.data;
+  }
+
+  rawIssuePortals.push(result.data);
+  return result.data;
+}
+
+function issuePortalUrl(portal){
+  const url=new URL('/melding.html',window.location.origin);
+  url.searchParams.set('token',portal.token);
+  return url.toString();
+}
+
+function renderActiveIssueQr(portal,property){
+  const url=issuePortalUrl(portal);
+  el('issueQrUrl').value=url;
+  el('issueQrStatus').textContent=portal.is_active?'Actief':'Uitgeschakeld';
+  el('issueQrStatus').className=portal.is_active?'issueQrStatusActive':'issueQrStatusInactive';
+  el('toggleIssueQrBtn').textContent=portal.is_active?'Uitschakelen':'Inschakelen';
+  el('issueQrMessage').textContent='';
+  el('issueQrMeta').textContent=`${property.object} · ${[property.straatnaam,property.huisnummer,property.postcode,property.stad].filter(Boolean).join(' ')}`;
+
+  if(window.ObjectIssueQr){
+    window.ObjectIssueQr.render(el('issueQrCanvas'),url,{size:300,margin:4});
+  }else{
+    el('issueQrCanvas').textContent='QR-codegenerator kon niet worden geladen.';
+  }
+}
+
+async function openIssueQrModal(propertyId){
+  activeIssueQrPropertyId=propertyId;
+  const property=getPropertyById(propertyId);
+  if(!property) return;
+
+  el('issueQrModal').classList.remove('hidden');
+  el('issueQrMeta').textContent=property.object;
+  el('issueQrMessage').textContent='QR-code wordt geladen…';
+  el('issueQrSetupWarning').classList.toggle('hidden',issuePortalsReady);
+
+  if(!issuePortalsReady){
+    el('issueQrContent').classList.add('hidden');
+    el('issueQrUrl').value='';
+    return;
+  }
+
+  try{
+    const portal=await ensureIssuePortal(propertyId);
+    el('issueQrContent').classList.remove('hidden');
+    renderActiveIssueQr(portal,property);
+  }catch(error){
+    console.error(error);
+    el('issueQrMessage').textContent='QR-code kon niet worden geladen: '+error.message;
+  }
+}
+
+function closeIssueQrModal(){
+  el('issueQrModal')?.classList.add('hidden');
+  activeIssueQrPropertyId=null;
+}
+
+async function copyIssueQrLink(){
+  const url=el('issueQrUrl').value;
+  if(!url) return;
+  try{
+    await navigator.clipboard.writeText(url);
+    el('issueQrMessage').textContent='Meldingslink gekopieerd.';
+  }catch(error){
+    el('issueQrUrl').select();
+    document.execCommand('copy');
+    el('issueQrMessage').textContent='Meldingslink gekopieerd.';
+  }
+}
+
+function downloadIssueQr(){
+  const url=el('issueQrUrl').value;
+  const property=getPropertyById(activeIssueQrPropertyId);
+  if(!url||!property||!window.ObjectIssueQr) return;
+
+  const link=document.createElement('a');
+  link.href=window.ObjectIssueQr.toDataUrl(url,{size:1200,margin:5});
+  link.download=`qr-melding-${safeFileName(property.object||'object').replace(/\.[^.]+$/,'')}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  el('issueQrMessage').textContent='QR-code gedownload.';
+}
+
+function printIssueQr(){
+  const url=el('issueQrUrl').value;
+  const property=getPropertyById(activeIssueQrPropertyId);
+  const canvas=el('issueQrCanvas')?.querySelector('canvas');
+  if(!url||!property||!canvas) return;
+
+  const popup=window.open('','_blank','noopener,noreferrer');
+  if(!popup){
+    el('issueQrMessage').textContent='Sta pop-ups toe om de QR-code te printen.';
+    return;
+  }
+
+  const address=[property.straatnaam,property.huisnummer,property.postcode,property.stad].filter(Boolean).join(' ');
+  popup.document.write(`<!doctype html><html lang="nl"><head><meta charset="utf-8"><title>QR-code ${escHtml(property.object)}</title><style>
+    body{font-family:Arial,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;color:#111827}
+    .sheet{width:170mm;min-height:220mm;border:2px solid #111827;border-radius:8mm;padding:18mm;text-align:center;box-sizing:border-box}
+    img{width:95mm;height:95mm;image-rendering:pixelated}
+    h1{font-size:26pt;margin:0 0 8mm}.address{font-size:14pt;margin:0 0 10mm;color:#475569}
+    .instruction{font-size:17pt;font-weight:700;line-height:1.4;margin:8mm 0}
+    .small{font-size:10pt;color:#64748b;word-break:break-all}
+    @media print{body{min-height:auto}.sheet{border-color:#111827}}
+  </style></head><body><div class="sheet">
+    <h1>${escHtml(branding.company_name||'Vastgoedbeheer')}</h1>
+    <p class="address">${escHtml(property.object)}<br>${escHtml(address)}</p>
+    <img src="${canvas.toDataURL('image/png')}" alt="QR-code">
+    <p class="instruction">Scan deze QR-code om een storing, defect of onderhoudsmelding door te geven.</p>
+    <p class="small">${escHtml(url)}</p>
+  </div><script>window.onload=()=>window.print()<\/script></body></html>`);
+  popup.document.close();
+}
+
+async function toggleIssueQr(){
+  const portal=issuePortalForProperty(activeIssueQrPropertyId);
+  const property=getPropertyById(activeIssueQrPropertyId);
+  if(!portal||!property) return;
+
+  const next=!portal.is_active;
+  const result=await sb
+    .from('property_issue_portals')
+    .update({is_active:next,updated_at:new Date().toISOString()})
+    .eq('property_id',portal.property_id)
+    .select('*')
+    .single();
+
+  if(result.error){
+    el('issueQrMessage').textContent='Status wijzigen mislukt: '+result.error.message;
+    return;
+  }
+
+  const index=rawIssuePortals.findIndex(item=>item.property_id===portal.property_id);
+  rawIssuePortals[index]=result.data;
+  renderActiveIssueQr(result.data,property);
+  el('issueQrMessage').textContent=next?'Meldingslink ingeschakeld.':'Meldingslink uitgeschakeld.';
+}
+
+async function regenerateIssueQr(){
+  const portal=issuePortalForProperty(activeIssueQrPropertyId);
+  const property=getPropertyById(activeIssueQrPropertyId);
+  if(!portal||!property) return;
+  if(!confirm('Een nieuwe QR-code maken? De oude QR-code en link werken daarna direct niet meer.')) return;
+
+  const token=crypto.randomUUID();
+  const result=await sb
+    .from('property_issue_portals')
+    .update({token,is_active:true,updated_at:new Date().toISOString()})
+    .eq('property_id',portal.property_id)
+    .select('*')
+    .single();
+
+  if(result.error){
+    el('issueQrMessage').textContent='Nieuwe QR-code maken mislukt: '+result.error.message;
+    return;
+  }
+
+  const index=rawIssuePortals.findIndex(item=>item.property_id===portal.property_id);
+  rawIssuePortals[index]=result.data;
+  renderActiveIssueQr(result.data,property);
+  el('issueQrMessage').textContent='Nieuwe QR-code gemaakt. De oude code is ongeldig.';
+}
+
+function tenantReportProperty(report){
+  return report.property_id?getPropertyById(report.property_id):null;
+}
+
+function tenantReportIsOpen(report){
+  return !['Afgerond','Afgewezen','Omgezet naar onderhoud'].includes(report.status);
+}
+
+function tenantReportTone(report){
+  if(report.status==='Afgerond'||report.status==='Omgezet naar onderhoud') return 'ok';
+  if(report.status==='Afgewezen') return 'neutral';
+  if(report.urgency==='Spoed') return 'danger';
+  if(report.urgency==='Hoog') return 'warning';
+  return report.status==='Nieuw'?'warning':'neutral';
+}
+
+function tenantReportContact(report){
+  return [
+    report.reporter_name,
+    report.phone,
+    report.email,
+    report.availability?`Bereikbaar: ${report.availability}`:''
+  ].filter(Boolean).join(' · ')||'Geen contactgegevens opgegeven';
+}
+
+function filteredTenantReports(){
+  return rawTenantIssueReports
+    .filter(report=>{
+      if(query){
+        const property=tenantReportProperty(report);
+        const haystack=[
+          report.category,report.description,report.urgency,report.status,
+          report.reporter_name,report.email,report.phone,report.availability,
+          property?.object,property?.straatnaam,property?.huisnummer,property?.stad
+        ].filter(Boolean).join(' ').toLowerCase();
+        if(!haystack.includes(query.toLowerCase())) return false;
+      }
+      if(tenantReportStatusFilter==='open'&&!tenantReportIsOpen(report)) return false;
+      if(tenantReportStatusFilter&&tenantReportStatusFilter!=='open'&&report.status!==tenantReportStatusFilter) return false;
+      if(tenantReportUrgencyFilter&&report.urgency!==tenantReportUrgencyFilter) return false;
+      if(tenantReportObjectFilter&&report.property_id!==tenantReportObjectFilter) return false;
+      return true;
+    })
+    .sort((a,b)=>String(b.submitted_at||'').localeCompare(String(a.submitted_at||'')));
+}
+
+function renderTenantIssueReports(){
+  const target=el('tenantReportOverview');
+  if(!target) return;
+
+  const open=rawTenantIssueReports.filter(tenantReportIsOpen);
+  const newCount=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
+  const urgent=open.filter(report=>report.urgency==='Spoed').length;
+  const converted=rawTenantIssueReports.filter(report=>report.status==='Omgezet naar onderhoud').length;
+  const completed=rawTenantIssueReports.filter(report=>report.status==='Afgerond').length;
+  if(el('tenantReportTabCount')) el('tenantReportTabCount').textContent=newCount;
+
+  if(!tenantIssueReportsReady){
+    target.innerHTML='<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer eerst het meegeleverde SQL-bestand uit om QR-codes en huurdersmeldingen te gebruiken.</span></div>';
+    return;
+  }
+
+  const objectOptions=vastgoedData
+    .slice()
+    .sort(compareObjectAddress)
+    .map(property=>`<option value="${escAttr(property.id)}" ${tenantReportObjectFilter===property.id?'selected':''}>${escHtml(property.object)}</option>`)
+    .join('');
+
+  const rows=filteredTenantReports();
+  target.innerHTML=`
+    <div class="cards tenantReportCards">
+      <div class="card"><span>Nieuw</span><strong>${newCount}</strong></div>
+      <div class="card"><span>Openstaand</span><strong>${open.length}</strong></div>
+      <div class="card"><span>Spoed</span><strong>${urgent}</strong></div>
+      <div class="card"><span>Omgezet naar onderhoud</span><strong>${converted}</strong></div>
+      <div class="card"><span>Afgerond</span><strong>${completed}</strong></div>
+    </div>
+
+    <div class="maintenanceFilters tenantReportFilters">
+      <label>Status
+        <select id="tenantReportStatusFilter">
+          <option value="open" ${tenantReportStatusFilter==='open'?'selected':''}>Alle openstaande meldingen</option>
+          <option value="" ${tenantReportStatusFilter===''?'selected':''}>Alle statussen</option>
+          ${TENANT_REPORT_STATUSES.map(status=>`<option value="${escAttr(status)}" ${tenantReportStatusFilter===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Urgentie
+        <select id="tenantReportUrgencyFilter">
+          <option value="">Alle urgenties</option>
+          ${TENANT_REPORT_URGENCIES.map(urgency=>`<option value="${escAttr(urgency)}" ${tenantReportUrgencyFilter===urgency?'selected':''}>${escHtml(urgency)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Object
+        <select id="tenantReportObjectFilter">
+          <option value="">Alle objecten</option>
+          ${objectOptions}
+        </select>
+      </label>
+    </div>
+
+    <div class="panel tenantReportTablePanel">
+      <div class="tenantReportTableWrap">
+        <table id="tenantReportTable">
+          <tr><th>Ontvangen</th><th>Object</th><th>Melding</th><th>Melder</th><th>Urgentie</th><th>Status</th><th>Acties</th></tr>
+          ${rows.map(report=>{
+            const property=tenantReportProperty(report);
+            const received=report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'-';
+            return `<tr>
+              <td>${escHtml(received)}<span class="subtle">Ref. ${escHtml(String(report.id).slice(0,8).toUpperCase())}</span></td>
+              <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Object verwijderd</span>'}</td>
+              <td><strong>${escHtml(report.category)}</strong><span class="tenantReportDescription">${escHtml(report.description)}</span></td>
+              <td><span class="tenantReportContact">${escHtml(tenantReportContact(report))}</span></td>
+              <td>${statusBadge([report.urgency,report.urgency==='Spoed'?'danger':report.urgency==='Hoog'?'warning':'ok'])}</td>
+              <td>
+                <select class="tenantReportQuickStatus" data-report-id="${report.id}">
+                  ${TENANT_REPORT_STATUSES.map(status=>`<option ${report.status===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+                </select>
+              </td>
+              <td>
+                ${report.status!=='Omgezet naar onderhoud'&&property?`<button class="miniLink convertTenantReportBtn" data-report-id="${report.id}">Naar onderhoud</button>`:''}
+                ${report.converted_maintenance_id?`<span class="subtle">Onderhoud gekoppeld</span>`:''}
+              </td>
+            </tr>`;
+          }).join('')||'<tr><td colspan="7">Geen huurdersmeldingen binnen dit filter.</td></tr>'}
+        </table>
+      </div>
+    </div>`;
+}
+
+async function updateTenantReportStatus(select){
+  const report=rawTenantIssueReports.find(item=>item.id===select.dataset.reportId);
+  if(!report) return;
+  const previous=report.status;
+  const status=select.value;
+  select.disabled=true;
+
+  const result=await sb
+    .from('tenant_issue_reports')
+    .update({status,updated_at:new Date().toISOString()})
+    .eq('id',report.id)
+    .select('*')
+    .single();
+
+  select.disabled=false;
+  if(result.error){
+    select.value=previous;
+    alert('Status bijwerken mislukt: '+result.error.message);
+    return;
+  }
+
+  const index=rawTenantIssueReports.findIndex(item=>item.id===report.id);
+  rawTenantIssueReports[index]=result.data;
+  render();
+}
+
+async function convertTenantReportToMaintenance(reportId){
+  const report=rawTenantIssueReports.find(item=>item.id===reportId);
+  const property=report?tenantReportProperty(report):null;
+  if(!report||!property) return;
+  if(!confirm(`Deze melding omzetten naar een onderhoudsregel voor ${property.object}?`)) return;
+
+  const contact=tenantReportContact(report);
+  const description=[
+    report.description,
+    '',
+    `Huurdersmelding ontvangen: ${report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'-'}`,
+    `Melder: ${contact}`,
+    `Referentie: ${String(report.id).slice(0,8).toUpperCase()}`
+  ].join('\n');
+
+  const maintenanceResult=await sb
+    .from('maintenance')
+    .insert({
+      property_id:property.id,
+      title:`Huurdersmelding: ${report.category}`,
+      description,
+      planned_date:null,
+      cost:null,
+      status:'Open',
+      priority:report.urgency==='Spoed'?'Urgent':report.urgency==='Hoog'?'Hoog':'Normaal'
+    })
+    .select('*')
+    .single();
+
+  if(maintenanceResult.error){
+    alert('Onderhoudsregel maken mislukt: '+maintenanceResult.error.message);
+    return;
+  }
+
+  const reportResult=await sb
+    .from('tenant_issue_reports')
+    .update({
+      status:'Omgezet naar onderhoud',
+      converted_maintenance_id:maintenanceResult.data.id,
+      updated_at:new Date().toISOString()
+    })
+    .eq('id',report.id);
+
+  if(reportResult.error){
+    alert('De onderhoudsregel is gemaakt, maar de melding kon niet worden bijgewerkt: '+reportResult.error.message);
+  }
+
+  await loadData();
+  setMaintenanceTab('maintenance');
+}
+
+function tenantReportsForPropertyHtml(propertyId){
+  const reports=rawTenantIssueReports
+    .filter(report=>report.property_id===propertyId)
+    .sort((a,b)=>String(b.submitted_at||'').localeCompare(String(a.submitted_at||'')));
+
+  const items=reports.slice(0,8).map(report=>`
+    <div class="tenantReportDetailItem">
+      <div>
+        <strong>${escHtml(report.category)}</strong>
+        <span>${statusBadge([report.status,tenantReportTone(report)])} ${report.submitted_at?new Date(report.submitted_at).toLocaleDateString('nl-NL'):'-'}</span>
+        <small>${escHtml(report.description)}</small>
+      </div>
+    </div>
+  `).join('');
+
+  return `<div class="taskDetailHeader">
+    <span>${reports.length?`${reports.length} ${reports.length===1?'melding':'meldingen'} ontvangen`:'Nog geen huurdersmeldingen ontvangen.'}</span>
+    <button class="smallBtn issueQrBtn" data-id="${propertyId}">QR-code melding</button>
+  </div>
+  <div class="tenantReportDetailList">${items||'<p class="empty">Nog geen meldingen voor dit object.</p>'}</div>`;
 }
 
 const MAINTENANCE_STATUSES=['Te plannen','Gepland','Afgerond'];
@@ -5624,6 +6079,7 @@ function render(){
   const data=filtered(), notes=notificationItems(data);
   renderDataCheck(data);
   renderTasks();
+  renderTenantIssueReports();
   renderNotificationFilters(notes);
   const visibleNotifications=filteredNotificationItems(notes);
   const objectPageData=filteredObjectsForPage(data);
@@ -5639,6 +6095,8 @@ function render(){
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
   if(el('dataCheckIssuesCount')) el('dataCheckIssuesCount').textContent=dataCheckReports(data).filter(report=>report.tone!=='ok').length;
   if(el('openTaskCount')) el('openTaskCount').textContent=rawTasks.filter(task=>task.status!=='Afgerond').length;
+  if(el('tenantIssueCount')) el('tenantIssueCount').textContent=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
+  if(el('tenantReportTabCount')) el('tenantReportTabCount').textContent=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard"><h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
@@ -5754,7 +6212,7 @@ function renderDetail(id){
   selectedPropertyId=id; const r=vastgoedData.find(x=>x.id===id); if(!r){ el('detailContent').innerHTML='<p>Object niet gevonden.</p>'; return; }
   const scope10=objectInspectionSummary(r.id,'SCOPE 10');
   const scope12=objectInspectionSummary(r.id,'SCOPE 12');
-  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn issueQrBtn" data-id="${r.id}">QR-code melding</button><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Huurdersmeldingen</h3>${tenantReportsForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
   setPage('detail', r.object);
   refreshPhotos();
 }
@@ -5941,8 +6399,12 @@ function init(){
     const dataCheckReset=e.target.closest('.dataCheckResetBtn');
     const taskEdit=e.target.closest('.taskEditBtn');
     const newTaskForObject=e.target.closest('.newTaskForObjectBtn');
+    const issueQr=e.target.closest('.issueQrBtn');
+    const convertTenantReport=e.target.closest('.convertTenantReportBtn');
     if(taskEdit) openTaskModal(taskEdit.dataset.taskId);
     if(newTaskForObject) openTaskModal('',newTaskForObject.dataset.id||'');
+    if(issueQr) openIssueQrModal(issueQr.dataset.id);
+    if(convertTenantReport) convertTenantReportToMaintenance(convertTenantReport.dataset.reportId);
     if(detail&&!taskEdit) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
@@ -6001,6 +6463,10 @@ function init(){
     if(e.target.id==='taskObjectFilter'){ taskObjectFilter=e.target.value; render(); }
     if(e.target.id==='taskDateFilter'){ taskDateFilter=e.target.value; render(); }
     if(e.target.classList.contains('taskQuickStatus')) updateTaskStatusQuick(e.target);
+    if(e.target.id==='tenantReportStatusFilter'){ tenantReportStatusFilter=e.target.value; render(); }
+    if(e.target.id==='tenantReportUrgencyFilter'){ tenantReportUrgencyFilter=e.target.value; render(); }
+    if(e.target.id==='tenantReportObjectFilter'){ tenantReportObjectFilter=e.target.value; render(); }
+    if(e.target.classList.contains('tenantReportQuickStatus')) updateTenantReportStatus(e.target);
     if(e.target.id==='dataCheckStatusFilter'){ dataCheckStatusFilter=e.target.value; render(); }
     if(e.target.id==='dataCheckGroupFilter'){ dataCheckGroupFilter=e.target.value; render(); }
     if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
@@ -6022,6 +6488,12 @@ function init(){
   });
   el('newPropertyBtn').addEventListener('click', openNewProperty);
   el('newTaskBtn')?.addEventListener('click',()=>openTaskModal());
+  el('closeIssueQrModalBtn')?.addEventListener('click',closeIssueQrModal);
+  el('copyIssueQrBtn')?.addEventListener('click',copyIssueQrLink);
+  el('downloadIssueQrBtn')?.addEventListener('click',downloadIssueQr);
+  el('printIssueQrBtn')?.addEventListener('click',printIssueQr);
+  el('toggleIssueQrBtn')?.addEventListener('click',toggleIssueQr);
+  el('regenerateIssueQrBtn')?.addEventListener('click',regenerateIssueQr);
   el('closeTaskModalBtn')?.addEventListener('click',closeTaskModal);
   el('taskForm')?.addEventListener('submit',saveTask);
   el('deleteTaskBtn')?.addEventListener('click',deleteTask);

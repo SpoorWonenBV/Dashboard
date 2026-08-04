@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://oplujvnyutmxfpdewezb.supabase.co; img-src 'self' data:; base-uri 'none'; form-action 'self'; object-src 'none'">
+  <title>Melding doorgeven</title>
+  <link rel="stylesheet" href="melding.css">
+</head>
+<body>
+  <main class="reportShell">
+    <section class="reportCard">
+      <header class="reportHeader">
+        <div class="reportMark" aria-hidden="true">!</div>
+        <div>
+          <p class="eyebrow">Vastgoedbeheer</p>
+          <h1>Melding doorgeven</h1>
+          <p id="reportProperty" class="propertyLine">Object wordt gecontroleerd…</p>
+        </div>
+      </header>
+
+      <div id="reportLoading" class="stateBox">De beveiligde meldingslink wordt gecontroleerd.</div>
+
+      <div id="reportInvalid" class="stateBox error hidden">
+        <strong>Deze meldingslink is niet geldig of niet meer actief.</strong>
+        <span>Neem rechtstreeks contact op met de beheerder.</span>
+      </div>
+
+      <form id="issueReportForm" class="hidden" novalidate>
+        <div class="emergencyNotice">
+          <strong>Direct gevaar, brand of een levensbedreigende situatie?</strong>
+          <span>Bel 112. Gebruik dit formulier alleen voor een storing, defect of onderhoudsmelding.</span>
+        </div>
+
+        <div class="fieldGrid">
+          <label>Onderwerp
+            <select id="issueCategory" required>
+              <option value="">Kies een onderwerp</option>
+              <option>Verwarming</option>
+              <option>Elektriciteit</option>
+              <option>Water of lekkage</option>
+              <option>Sanitair</option>
+              <option>Deur, raam of slot</option>
+              <option>Apparatuur of installatie</option>
+              <option>Schade</option>
+              <option>Overig</option>
+            </select>
+          </label>
+
+          <label>Urgentie
+            <select id="issueUrgency" required>
+              <option>Normaal</option>
+              <option>Hoog</option>
+              <option>Spoed</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Wat werkt er niet of wat is er kapot?
+          <textarea id="issueDescription" rows="7" minlength="10" maxlength="2000" required placeholder="Beschrijf zo duidelijk mogelijk wat er aan de hand is en sinds wanneer."></textarea>
+          <span class="fieldHelp">Minimaal 10 en maximaal 2.000 tekens.</span>
+        </label>
+
+        <div class="fieldGrid">
+          <label>Naam
+            <input id="issueReporterName" maxlength="120" autocomplete="name" placeholder="Naam van de melder">
+          </label>
+          <label>Telefoonnummer
+            <input id="issuePhone" maxlength="50" autocomplete="tel" inputmode="tel" placeholder="Voor het maken van een afspraak">
+          </label>
+          <label>E-mailadres
+            <input id="issueEmail" maxlength="180" autocomplete="email" inputmode="email" type="email" placeholder="naam@voorbeeld.nl">
+          </label>
+          <label>Wanneer bent u bereikbaar?
+            <input id="issueAvailability" maxlength="500" placeholder="Bijvoorbeeld werkdagen na 16:00">
+          </label>
+        </div>
+
+        <label class="privacyCheck">
+          <input id="issuePrivacy" type="checkbox" required>
+          <span>Mijn contactgegevens mogen worden gebruikt om deze melding af te handelen.</span>
+        </label>
+
+        <div class="websiteField" aria-hidden="true">
+          <label>Website<input id="issueWebsite" tabindex="-1" autocomplete="off"></label>
+        </div>
+
+        <button id="issueSubmitBtn" type="submit">Melding versturen</button>
+        <p id="issueFormMessage" class="formMessage" aria-live="polite"></p>
+      </form>
+
+      <div id="reportSuccess" class="successBox hidden">
+        <div class="successIcon" aria-hidden="true">✓</div>
+        <h2>Melding ontvangen</h2>
+        <p>De beheerder kan de melding nu bekijken en opvolgen.</p>
+        <p>Referentie: <strong id="reportReference"></strong></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="melding.js"></script>
+</body>
+</html>

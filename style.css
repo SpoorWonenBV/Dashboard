@@ -1824,3 +1824,152 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
     flex-direction:column;
   }
 }
+
+
+/* v40.41: QR-codes en huurdersmeldingen */
+.maintenanceTab span{
+  display:inline-flex;
+  min-width:22px;
+  height:22px;
+  align-items:center;
+  justify-content:center;
+  margin-left:5px;
+  padding:0 6px;
+  border-radius:999px;
+  background:#e2e8f0;
+  color:#334155;
+  font-size:11px;
+}
+.maintenanceTab.active span{
+  background:rgba(255,255,255,.18);
+  color:inherit;
+}
+.issueQrModalCard{
+  width:min(720px,96vw);
+}
+.issueQrContent{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  align-items:center;
+  gap:20px;
+  margin:18px 0;
+  padding:18px;
+  border:1px solid #dbe4ef;
+  border-radius:16px;
+  background:#f8fafc;
+}
+.issueQrCanvas{
+  width:250px;
+  min-height:250px;
+  display:grid;
+  place-items:center;
+  padding:8px;
+  border:1px solid #cbd5e1;
+  border-radius:14px;
+  background:#fff;
+}
+.issueQrCanvas canvas{
+  display:block;
+  width:100%;
+  height:auto;
+  image-rendering:pixelated;
+}
+.issueQrText{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  color:#64748b;
+  line-height:1.5;
+}
+.issueQrText strong{
+  color:#172033;
+  font-size:18px;
+}
+.issueQrStatusRow{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 0;
+  border-bottom:1px solid #e2e8f0;
+  color:#64748b;
+}
+.issueQrStatusActive{color:#166534}
+.issueQrStatusInactive{color:#991b1b}
+.issueQrActions{
+  flex-wrap:wrap;
+}
+.tenantReportCards{
+  grid-template-columns:repeat(auto-fit,minmax(165px,1fr));
+}
+.tenantReportFilters{
+  grid-template-columns:repeat(3,minmax(190px,1fr));
+}
+.tenantReportTablePanel{
+  padding:0;
+  overflow:hidden;
+}
+.tenantReportTableWrap{
+  width:100%;
+  overflow-x:auto;
+}
+#tenantReportTable{
+  min-width:1180px;
+}
+#tenantReportTable td{
+  vertical-align:top;
+}
+#tenantReportTable th:nth-child(3){min-width:310px}
+#tenantReportTable th:nth-child(4){min-width:260px}
+.tenantReportDescription,
+.tenantReportContact{
+  display:block;
+  margin-top:5px;
+  color:#475569;
+  white-space:pre-wrap;
+  line-height:1.42;
+}
+.tenantReportQuickStatus{
+  min-width:190px;
+}
+.tenantReportDetailList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.tenantReportDetailItem{
+  padding:11px 12px;
+  border:1px solid #e2e8f0;
+  border-radius:11px;
+  background:#f8fafc;
+}
+.tenantReportDetailItem strong{
+  display:block;
+}
+.tenantReportDetailItem span{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+  margin-top:5px;
+  color:#64748b;
+  font-size:12px;
+}
+.tenantReportDetailItem small{
+  display:block;
+  margin-top:7px;
+  color:#475569;
+  line-height:1.4;
+  white-space:pre-wrap;
+}
+@media(max-width:800px){
+  .issueQrContent{
+    grid-template-columns:1fr;
+  }
+  .issueQrCanvas{
+    width:min(280px,100%);
+    margin:auto;
+  }
+  .tenantReportFilters{
+    grid-template-columns:1fr;
+  }
+}

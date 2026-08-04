@@ -1,10 +1,13 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v40-40';
+const CACHE_NAME='vastgoed-dashboard-static-v40-41';
 const OFFLINE_URL='/offline.html';
 const STATIC_PATHS=new Set([
   '/style.css',
   '/app.js',
+  '/qr-code.js',
+  '/melding.css',
+  '/melding.js',
   '/offline.html',
   '/manifest.webmanifest',
   '/apple-touch-icon.png',

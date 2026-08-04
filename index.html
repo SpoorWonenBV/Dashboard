@@ -128,6 +128,7 @@
           <div class="card"><span>Leegstand / geen huurder</span><strong id="vacancyCount">-</strong></div>
           <div class="card"><span>Objecten niet compleet</span><strong id="dataCheckIssuesCount">-</strong></div>
           <div class="card"><span>Openstaande taken</span><strong id="openTaskCount">-</strong></div>
+          <div class="card"><span>Nieuwe huurdersmeldingen</span><strong id="tenantIssueCount">-</strong></div>
         </div>
         <div class="dashboardInsights">
           <div class="panel">
@@ -181,6 +182,7 @@
         <div class="maintenanceTabs" role="tablist" aria-label="Onderhoudsonderdelen">
           <button class="maintenanceTab active" type="button" data-maintenance-tab="maintenance" role="tab" aria-selected="true">Onderhoud</button>
           <button class="maintenanceTab" type="button" data-maintenance-tab="inspections" role="tab" aria-selected="false">Keuringen</button>
+          <button class="maintenanceTab" type="button" data-maintenance-tab="reports" role="tab" aria-selected="false">Huurdersmeldingen <span id="tenantReportTabCount">0</span></button>
         </div>
 
         <div id="maintenanceMainPanel" class="maintenanceSubPage active">
@@ -191,6 +193,10 @@
 
         <div id="maintenanceInspectionPanel" class="maintenanceSubPage">
           <div id="inspectionOverview"></div>
+        </div>
+
+        <div id="maintenanceReportPanel" class="maintenanceSubPage">
+          <div id="tenantReportOverview"></div>
         </div>
       </section>
 
@@ -635,6 +641,49 @@
   </div>
 
 
+  <div id="issueQrModal" class="modal hidden">
+    <div class="modalCard issueQrModalCard">
+      <div class="modalHeader">
+        <div>
+          <h2>QR-code voor huurdersmeldingen</h2>
+          <p id="issueQrMeta" class="meta"></p>
+        </div>
+        <button id="closeIssueQrModalBtn" class="iconBtn" type="button">×</button>
+      </div>
+
+      <div id="issueQrSetupWarning" class="importNotice warning hidden">
+        <strong>Eenmalige Supabase-instelling nodig</strong>
+        <span>Voer eerst het meegeleverde SQL-bestand uit.</span>
+      </div>
+
+      <div id="issueQrContent" class="issueQrContent">
+        <div id="issueQrCanvas" class="issueQrCanvas"></div>
+        <div class="issueQrText">
+          <strong>Scan om een storing of defect te melden</strong>
+          <span>De QR-code opent een beveiligd formulier dat alleen bij dit object hoort.</span>
+        </div>
+      </div>
+
+      <label>Openbare meldingslink
+        <input id="issueQrUrl" readonly>
+      </label>
+
+      <div class="issueQrStatusRow">
+        <span>Status meldingslink</span>
+        <strong id="issueQrStatus">-</strong>
+      </div>
+
+      <div class="formActions issueQrActions">
+        <button id="copyIssueQrBtn" type="button" class="secondaryBtn">Link kopiëren</button>
+        <button id="downloadIssueQrBtn" type="button" class="secondaryBtn">QR downloaden</button>
+        <button id="printIssueQrBtn" type="button" class="secondaryBtn">QR printen</button>
+        <button id="toggleIssueQrBtn" type="button" class="secondaryBtn">Uitschakelen</button>
+        <button id="regenerateIssueQrBtn" type="button" class="dangerBtn">Nieuwe QR-code</button>
+      </div>
+      <p id="issueQrMessage" class="formMessage"></p>
+    </div>
+  </div>
+
   <div id="taskModal" class="modal hidden">
     <div class="modalCard">
       <div class="modalHeader">
@@ -868,6 +917,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="qr-code.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
