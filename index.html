@@ -339,6 +339,7 @@
             <div class="formGrid">
               <label>Bedrijfsnaam<input id="brandingCompanyName" maxlength="80" required></label>
               <label>Dashboardnaam<input id="brandingDashboardName" maxlength="80" required></label>
+              <label>Plaats verhuurder voor brieven<input id="brandingLetterCity" maxlength="100" placeholder="Bijvoorbeeld Rotterdam"></label>
               <label>Logintekst<input id="brandingLoginSubtitle" maxlength="140"></label>
               <label>Browsertitel<input id="brandingBrowserTitle" maxlength="120"></label>
               <label>Hoofdkleur<input id="brandingPrimaryColor" type="color" value="#101827"></label>
@@ -513,6 +514,18 @@
             <label>Stad<input id="propertyCity"></label>
             <label>Status<input id="propertyStatus" value="Actief"></label>
             <label>Aankoopdatum<input id="propertyPurchaseDate" type="date"></label>
+          </div>
+        </section>
+
+        <section class="propertyFormSection">
+          <h3>Correspondentie- en factuurgegevens</h3>
+          <p class="formHint">Laat deze velden leeg wanneer de huurder en het adres van het gehuurde object gebruikt mogen worden. Vul ze in wanneer brieven en facturen naar een ander adres moeten.</p>
+          <div class="formGrid">
+            <label>Naam / bedrijfsnaam ontvanger<input id="propertyBillingName"></label>
+            <label>Factuuradres<input id="propertyBillingAddress"></label>
+            <label>Factuur huisnummer<input id="propertyBillingHouseNumber"></label>
+            <label>Factuur postcode<input id="propertyBillingPostalCode" maxlength="12" placeholder="Bijvoorbeeld 1234 AB"></label>
+            <label>Factuur plaats<input id="propertyBillingCity"></label>
           </div>
         </section>
 
