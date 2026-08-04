@@ -1561,3 +1561,121 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
 @media(max-width:520px){
   .dataCheckSummaryCards{grid-template-columns:1fr}
 }
+
+
+/* v40.39: Datacontrole praktisch afgerond */
+.dataCheckFilterBar{
+  grid-template-columns:repeat(2,minmax(210px,320px));
+}
+.dataCheckIssueStack{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.dataCheckIssueCard,
+.dataCheckResolvedCard{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px;
+  border-radius:11px;
+  border:1px solid #e2e8f0;
+  background:#fff;
+}
+.dataCheckIssueCard.danger{
+  border-color:#fecaca;
+  background:#fffafa;
+}
+.dataCheckIssueCard.warning{
+  border-color:#fde68a;
+  background:#fffdf5;
+}
+.dataCheckIssueMain{
+  min-width:180px;
+}
+.dataCheckIssueMain small,
+.dataCheckResolvedCard small{
+  display:block;
+  margin-top:4px;
+  color:#64748b;
+  line-height:1.35;
+}
+.dataCheckIssueHeading{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+}
+.dataCheckLevel,
+.dataCheckResolvedBadge{
+  display:inline-flex;
+  align-items:center;
+  min-height:22px;
+  padding:2px 7px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+}
+.dataCheckLevel.danger{
+  background:#fee2e2;
+  color:#991b1b;
+}
+.dataCheckLevel.warning{
+  background:#fef3c7;
+  color:#92400e;
+}
+.dataCheckResolvedCard{
+  border-color:#bbf7d0;
+  background:#f7fff9;
+}
+.dataCheckResolvedCard>div{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+}
+.dataCheckResolvedCard small{
+  flex-basis:100%;
+}
+.dataCheckResolvedBadge{
+  background:#dcfce7;
+  color:#166534;
+}
+.dataCheckIssueActions{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:5px;
+}
+.dataCheckIssueActions .miniLink,
+.dataCheckResolvedCard .miniLink{
+  margin-top:0;
+  white-space:nowrap;
+}
+.dataCheckIssueActions button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+.dataCheckFieldHighlight{
+  outline:3px solid rgba(245,158,11,.35)!important;
+  border-color:#d97706!important;
+  box-shadow:0 0 0 5px rgba(245,158,11,.12)!important;
+  transition:box-shadow .2s ease,border-color .2s ease;
+}
+@media(max-width:850px){
+  .dataCheckIssueCard,
+  .dataCheckResolvedCard{
+    flex-direction:column;
+  }
+  .dataCheckIssueActions{
+    justify-content:flex-start;
+  }
+}
+@media(max-width:700px){
+  .dataCheckFilterBar{
+    grid-template-columns:1fr;
+  }
+}

@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', notificationTypeFilter = '', dataCheckStatusFilter = 'incomplete', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
+let sb, query = '', notificationTypeFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -2764,7 +2764,7 @@ async function checkSession(){
 }
 async function loadData(){
   try{
-    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir]=await Promise.all([
+    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr]=await Promise.all([
       sb.from('properties').select('*').order('created_at',{ascending:false}),
       sb.from('contracts').select('*'),
       sb.from('tenants').select('*'),
@@ -2775,7 +2775,8 @@ async function loadData(){
       sb.from('service_cost_settlements').select('*').order('settlement_year',{ascending:false}),
       sb.from('notification_settings').select('*').eq('id',1).maybeSingle(),
       sb.from('email_notification_log').select('*').order('created_at',{ascending:false}).limit(20),
-      sb.from('property_inspections').select('*').order('valid_until',{ascending:true})
+      sb.from('property_inspections').select('*').order('valid_until',{ascending:true}),
+      sb.from('property_data_check_overrides').select('*').order('updated_at',{ascending:false})
     ]);
     [pr,cr,tr,mr,dr,hr].forEach(r=>{if(r.error) throw r.error});
     rawProperties=pr.data||[]; rawContracts=cr.data||[]; rawTenants=tr.data||[]; rawMaintenance=mr.data||[]; rawDocuments=dr.data||[]; rawMaintenanceHistory=hr.data||[];
@@ -2816,6 +2817,14 @@ async function loadData(){
     }else{
       rawInspections=ir.data||[];
       inspectionsSetupReady=true;
+    }
+    if(dcr.error){
+      console.warn('Datacontrole-afhandeling nog niet beschikbaar:',dcr.error.message);
+      rawDataCheckOverrides=[];
+      dataCheckOverridesReady=false;
+    }else{
+      rawDataCheckOverrides=dcr.data||[];
+      dataCheckOverridesReady=true;
     }
     vastgoedData=normalize(rawProperties, rawContracts, rawTenants, rawMaintenance, rawDocuments, rawMaintenanceHistory);
     el('statusText').textContent=`Live data uit Supabase. Laatst geladen: ${new Date().toLocaleTimeString('nl-NL')}`;
@@ -2929,10 +2938,131 @@ function hasPropertyDocumentType(r,terms){
   });
 }
 
+function dataCheckOverride(propertyId,checkKey){
+  return rawDataCheckOverrides.find(item=>
+    item.property_id===propertyId&&item.check_key===checkKey
+  )||null;
+}
+
+function dataCheckResolutionLabel(resolution){
+  return resolution==='niet_van_toepassing'?'Niet van toepassing':'Bewust leeg';
+}
+
+function dataCheckFieldId(checkKey){
+  const fields={
+    name:'propertyName',
+    address:'propertyAddress',
+    house_number:'propertyHouseNumber',
+    postal_code:'propertyPostalCode',
+    city:'propertyCity',
+    property_type:'propertyType',
+    status:'propertyStatus',
+    contract:'contractStartDate',
+    tenant:'tenantName',
+    tenant_contact:'tenantEmail',
+    billing_name:'propertyBillingName',
+    billing_address:'propertyBillingAddress',
+    billing_city:'propertyBillingPostalCode',
+    contract_start:'contractStartDate',
+    notice_period:'contractNoticePeriodMonths',
+    monthly_rent:'propertyMonthlyRent',
+    yearly_rent:'propertyYearlyRent',
+    yearly_rent_match:'propertyYearlyRent',
+    rent_increase_month:'propertyRentIncreaseMonth',
+    energy_label:'propertyEnergyLabel',
+    energy_label_date:'propertyEnergyValidUntil',
+    woz_value:'propertyWozValue'
+  };
+  return fields[checkKey]||'propertyName';
+}
+
+function openDataCheckField(propertyId,checkKey){
+  openEditProperty(propertyId);
+  window.setTimeout(()=>{
+    const field=el(dataCheckFieldId(checkKey));
+    if(!field) return;
+    field.scrollIntoView({behavior:'smooth',block:'center'});
+    field.classList.add('dataCheckFieldHighlight');
+    try{field.focus({preventScroll:true});}catch(error){field.focus();}
+    window.setTimeout(()=>field.classList.remove('dataCheckFieldHighlight'),2600);
+  },80);
+}
+
+async function saveDataCheckOverride(propertyId,checkKey,resolution){
+  if(!dataCheckOverridesReady){
+    alert('Voer eerst het meegeleverde Supabase SQL-bestand uit.');
+    return;
+  }
+
+  const report=propertyDataCheck(vastgoedData.find(item=>item.id===propertyId));
+  const check=report?.checks.find(item=>item.key===checkKey);
+  if(!check) return;
+
+  const resolutionLabel=dataCheckResolutionLabel(resolution);
+  const current=dataCheckOverride(propertyId,checkKey);
+  const note=window.prompt(
+    `${check.label} markeren als "${resolutionLabel}".\n\nVoeg eventueel een korte toelichting toe:`,
+    current?.note||''
+  );
+  if(note===null) return;
+
+  const payload={
+    property_id:propertyId,
+    check_key:checkKey,
+    resolution,
+    note:clean(note)||null,
+    updated_at:new Date().toISOString()
+  };
+
+  const result=await sb
+    .from('property_data_check_overrides')
+    .upsert(payload,{onConflict:'property_id,check_key'})
+    .select('*')
+    .single();
+
+  if(result.error) throw result.error;
+
+  rawDataCheckOverrides=rawDataCheckOverrides.filter(item=>
+    !(item.property_id===propertyId&&item.check_key===checkKey)
+  );
+  rawDataCheckOverrides.unshift(result.data);
+  render();
+}
+
+async function deleteDataCheckOverride(id){
+  const current=rawDataCheckOverrides.find(item=>item.id===id);
+  if(!current) return;
+  if(!confirm('Deze afhandeling herstellen en het punt opnieuw als ontbrekend tonen?')) return;
+
+  const result=await sb
+    .from('property_data_check_overrides')
+    .delete()
+    .eq('id',id);
+
+  if(result.error) throw result.error;
+  rawDataCheckOverrides=rawDataCheckOverrides.filter(item=>item.id!==id);
+  render();
+}
+
 function propertyDataCheck(r){
+  if(!r) return null;
+
   const checks=[];
   const add=(key,label,ok,{weight=2,severity='danger',group='Objectgegevens',detail=''}={})=>{
-    checks.push({key,label,ok:Boolean(ok),weight,severity,group,detail});
+    const valid=Boolean(ok);
+    const override=valid?null:dataCheckOverride(r.id,key);
+    checks.push({
+      key,
+      label,
+      ok:valid,
+      effectiveOk:valid||Boolean(override),
+      override,
+      weight,
+      severity,
+      level:severity==='danger'?'Verplicht':'Aanbevolen',
+      group,
+      detail
+    });
   };
 
   const property=r.property||{};
@@ -3030,12 +3160,13 @@ function propertyDataCheck(r){
   });
 
   const totalWeight=checks.reduce((sum,check)=>sum+check.weight,0);
-  const passedWeight=checks.filter(check=>check.ok).reduce((sum,check)=>sum+check.weight,0);
+  const passedWeight=checks.filter(check=>check.effectiveOk).reduce((sum,check)=>sum+check.weight,0);
   const score=totalWeight?Math.round((passedWeight/totalWeight)*100):100;
-  const issues=checks.filter(check=>!check.ok);
+  const issues=checks.filter(check=>!check.effectiveOk);
+  const resolved=checks.filter(check=>!check.ok&&Boolean(check.override));
   const criticalCount=issues.filter(issue=>issue.severity==='danger').length;
 
-  let status='Compleet';
+  let status=resolved.length?'Afgehandeld':'Compleet';
   let tone='ok';
   if(criticalCount>0||score<80){
     status='Onvoldoende';
@@ -3045,12 +3176,13 @@ function propertyDataCheck(r){
     tone='warning';
   }
 
-  return {r,checks,issues,score,status,tone,criticalCount};
+  return {r,checks,issues,resolved,score,status,tone,criticalCount};
 }
 
 function dataCheckReports(data){
   return data
     .map(propertyDataCheck)
+    .filter(Boolean)
     .sort((a,b)=>
       a.score-b.score ||
       b.criticalCount-a.criticalCount ||
@@ -3066,49 +3198,101 @@ function renderDataCheck(data){
 
   const reports=dataCheckReports(data);
   const complete=reports.filter(report=>report.status==='Compleet').length;
+  const handled=reports.filter(report=>report.status==='Afgehandeld').length;
   const attention=reports.filter(report=>report.status==='Aandacht').length;
   const insufficient=reports.filter(report=>report.status==='Onvoldoende').length;
   const totalIssues=reports.reduce((sum,report)=>sum+report.issues.length,0);
+  const totalResolved=reports.reduce((sum,report)=>sum+report.resolved.length,0);
+  const groups=[...new Set(reports.flatMap(report=>report.checks.map(check=>check.group)))]
+    .sort((a,b)=>a.localeCompare(b,'nl',{sensitivity:'base'}));
 
   summary.innerHTML=`
     <div class="card"><span>Gecontroleerde objecten</span><strong>${reports.length}</strong></div>
     <div class="card"><span>Compleet</span><strong>${complete}</strong></div>
+    <div class="card"><span>Bewust afgehandeld</span><strong>${handled}</strong></div>
     <div class="card"><span>Aandacht</span><strong>${attention}</strong></div>
     <div class="card"><span>Onvoldoende</span><strong>${insufficient}</strong></div>
-    <div class="card"><span>Ontbrekende datapunten</span><strong>${totalIssues}</strong></div>
+    <div class="card"><span>Open datapunten</span><strong>${totalIssues}</strong></div>
   `;
 
-  filters.innerHTML=`<div class="maintenanceFilters dataCheckFilterBar">
-    <label>Status
-      <select id="dataCheckStatusFilter">
-        <option value="incomplete" ${dataCheckStatusFilter==='incomplete'?'selected':''}>Niet compleet (${attention+insufficient})</option>
-        <option value="" ${dataCheckStatusFilter===''?'selected':''}>Alle objecten (${reports.length})</option>
-        <option value="danger" ${dataCheckStatusFilter==='danger'?'selected':''}>Onvoldoende (${insufficient})</option>
-        <option value="warning" ${dataCheckStatusFilter==='warning'?'selected':''}>Aandacht (${attention})</option>
-        <option value="ok" ${dataCheckStatusFilter==='ok'?'selected':''}>Compleet (${complete})</option>
-      </select>
-    </label>
-  </div>`;
+  filters.innerHTML=`
+    ${!dataCheckOverridesReady?'<div class="importNotice warning"><strong>Eenmalige Supabase-instelling nodig</strong><span>Voer het meegeleverde SQL-bestand uit om Bewust leeg en Niet van toepassing per object te kunnen bewaren.</span></div>':''}
+    <div class="maintenanceFilters dataCheckFilterBar">
+      <label>Status
+        <select id="dataCheckStatusFilter">
+          <option value="incomplete" ${dataCheckStatusFilter==='incomplete'?'selected':''}>Niet compleet (${attention+insufficient})</option>
+          <option value="" ${dataCheckStatusFilter===''?'selected':''}>Alle objecten (${reports.length})</option>
+          <option value="danger" ${dataCheckStatusFilter==='danger'?'selected':''}>Onvoldoende (${insufficient})</option>
+          <option value="warning" ${dataCheckStatusFilter==='warning'?'selected':''}>Aandacht (${attention})</option>
+          <option value="resolved" ${dataCheckStatusFilter==='resolved'?'selected':''}>Bewust afgehandeld (${handled})</option>
+          <option value="ok" ${dataCheckStatusFilter==='ok'?'selected':''}>Compleet / afgehandeld (${complete+handled})</option>
+        </select>
+      </label>
+      <label>Onderdeel
+        <select id="dataCheckGroupFilter">
+          <option value="">Alle onderdelen</option>
+          ${groups.map(group=>`<option value="${escAttr(group)}" ${dataCheckGroupFilter===group?'selected':''}>${escHtml(group)}</option>`).join('')}
+        </select>
+      </label>
+    </div>`;
 
   const visible=reports.filter(report=>{
-    if(dataCheckStatusFilter==='incomplete') return report.status!=='Compleet';
-    if(!dataCheckStatusFilter) return true;
-    return report.tone===dataCheckStatusFilter;
+    let statusMatch=true;
+    if(dataCheckStatusFilter==='incomplete') statusMatch=report.tone!=='ok';
+    else if(dataCheckStatusFilter==='resolved') statusMatch=report.resolved.length>0;
+    else if(dataCheckStatusFilter) statusMatch=report.tone===dataCheckStatusFilter;
+
+    const groupMatch=!dataCheckGroupFilter||
+      report.issues.some(issue=>issue.group===dataCheckGroupFilter)||
+      report.resolved.some(item=>item.group===dataCheckGroupFilter);
+
+    return statusMatch&&groupMatch;
   });
 
   table.innerHTML=`<tr>
     <th>Object</th>
     <th>Volledigheid</th>
     <th>Status</th>
-    <th>Ontbrekend / controleren</th>
+    <th>Ontbrekend / afgehandeld</th>
     <th>Actie</th>
   </tr>`+visible.map(report=>{
-    const issueHtml=report.issues.length
-      ? `<div class="dataCheckIssueList">${report.issues.map(issue=>`
-          <span class="dataCheckIssue ${issue.severity}" title="${escAttr(issue.detail||issue.group)}">
-            ${escHtml(issue.label)}
-          </span>`).join('')}</div>`
-      : '<span class="dataCheckCompleteText">Alle gecontroleerde gegevens zijn aanwezig.</span>';
+    const visibleIssues=dataCheckGroupFilter
+      ? report.issues.filter(issue=>issue.group===dataCheckGroupFilter)
+      : report.issues;
+    const visibleResolved=dataCheckGroupFilter
+      ? report.resolved.filter(item=>item.group===dataCheckGroupFilter)
+      : report.resolved;
+
+    const issueHtml=visibleIssues.map(issue=>`
+      <div class="dataCheckIssueCard ${issue.severity}">
+        <div class="dataCheckIssueMain">
+          <div class="dataCheckIssueHeading">
+            <span class="dataCheckLevel ${issue.severity}">${escHtml(issue.level)}</span>
+            <strong>${escHtml(issue.label)}</strong>
+          </div>
+          <small>${escHtml(issue.detail||issue.group)}</small>
+        </div>
+        <div class="dataCheckIssueActions">
+          <button class="miniLink dataCheckEditBtn" data-id="${report.r.id}" data-check-key="${escAttr(issue.key)}">Aanvullen</button>
+          <button class="miniLink dataCheckResolveBtn" data-id="${report.r.id}" data-check-key="${escAttr(issue.key)}" data-resolution="bewust_leeg" ${dataCheckOverridesReady?'':'disabled'}>Bewust leeg</button>
+          <button class="miniLink dataCheckResolveBtn" data-id="${report.r.id}" data-check-key="${escAttr(issue.key)}" data-resolution="niet_van_toepassing" ${dataCheckOverridesReady?'':'disabled'}>N.v.t.</button>
+        </div>
+      </div>
+    `).join('');
+
+    const resolvedHtml=visibleResolved.map(item=>`
+      <div class="dataCheckResolvedCard">
+        <div>
+          <span class="dataCheckResolvedBadge">${escHtml(dataCheckResolutionLabel(item.override.resolution))}</span>
+          <strong>${escHtml(item.label)}</strong>
+          ${item.override.note?`<small>${escHtml(item.override.note)}</small>`:''}
+        </div>
+        <button class="miniLink dataCheckResetBtn" data-override-id="${item.override.id}">Herstellen</button>
+      </div>
+    `).join('');
+
+    const checksHtml=issueHtml+resolvedHtml||
+      '<span class="dataCheckCompleteText">Alle gecontroleerde gegevens zijn aanwezig.</span>';
 
     return `<tr>
       <td>
@@ -3122,7 +3306,7 @@ function renderDataCheck(data){
         <strong class="dataCheckScore">${report.score}%</strong>
       </td>
       <td>${statusBadge([report.status,report.tone])}</td>
-      <td>${issueHtml}</td>
+      <td><div class="dataCheckIssueStack">${checksHtml}</div></td>
       <td>
         <div class="dataCheckActions">
           <button class="miniLink detailBtn" data-id="${report.r.id}">Open object</button>
@@ -5080,7 +5264,7 @@ function render(){
   if(el('maintenanceSoon')) el('maintenanceSoon').textContent=data.filter(r=>{const d=daysUntil(r.scope_inspectie_geldig_tot); return d!==null && d<=90;}).length;
   if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return r.energielabel_verplicht&&d!==null&&d<=180;}).length;
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
-  if(el('dataCheckIssuesCount')) el('dataCheckIssuesCount').textContent=dataCheckReports(data).filter(report=>report.status!=='Compleet').length;
+  if(el('dataCheckIssuesCount')) el('dataCheckIssuesCount').textContent=dataCheckReports(data).filter(report=>report.tone!=='ok').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard"><h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
@@ -5378,6 +5562,9 @@ function init(){
     const editInspection=e.target.closest('.editInspectionBtn');
     const deleteInspectionButton=e.target.closest('.deleteInspectionBtn');
     const openInspectionDoc=e.target.closest('.openInspectionDocBtn');
+    const dataCheckEdit=e.target.closest('.dataCheckEditBtn');
+    const dataCheckResolve=e.target.closest('.dataCheckResolveBtn');
+    const dataCheckReset=e.target.closest('.dataCheckResetBtn');
     if(detail) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
@@ -5400,6 +5587,23 @@ function init(){
     if(editInspection) openInspectionModal(editInspection.dataset.id);
     if(deleteInspectionButton) deleteInspection(deleteInspectionButton.dataset.id);
     if(openInspectionDoc) openDocument(openInspectionDoc.dataset.path);
+    if(dataCheckEdit) openDataCheckField(dataCheckEdit.dataset.id,dataCheckEdit.dataset.checkKey);
+    if(dataCheckResolve){
+      saveDataCheckOverride(
+        dataCheckResolve.dataset.id,
+        dataCheckResolve.dataset.checkKey,
+        dataCheckResolve.dataset.resolution
+      ).catch(error=>{
+        console.error(error);
+        alert('De keuze kon niet worden opgeslagen: '+error.message);
+      });
+    }
+    if(dataCheckReset){
+      deleteDataCheckOverride(dataCheckReset.dataset.overrideId).catch(error=>{
+        console.error(error);
+        alert('De afhandeling kon niet worden hersteld: '+error.message);
+      });
+    }
     const newInspectionForObject=e.target.closest('.newInspectionForObjectBtn');
     if(newInspectionForObject) openInspectionModal('',newInspectionForObject.dataset.id||'');
     if(e.target.closest('#newInspectionBtn')) openInspectionModal();
@@ -5415,6 +5619,7 @@ function init(){
   document.body.addEventListener('change', e=>{
     if(e.target.id==='notificationTypeFilter'){ notificationTypeFilter=e.target.value; render(); }
     if(e.target.id==='dataCheckStatusFilter'){ dataCheckStatusFilter=e.target.value; render(); }
+    if(e.target.id==='dataCheckGroupFilter'){ dataCheckGroupFilter=e.target.value; render(); }
     if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
     if(e.target.id==='objectTypeFilter'){ objectTypeFilter=e.target.value; render(); }
     if(e.target.id==='objectStatusFilter'){ objectStatusFilter=e.target.value; render(); }
