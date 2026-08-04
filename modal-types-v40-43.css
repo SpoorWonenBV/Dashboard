@@ -1,0 +1,105 @@
+/* v40.43: visueel onderscheid tussen dashboard-pop-ups */
+.typedModal .modalCard{
+  position:relative;
+  border-top:6px solid #64748b;
+  box-shadow:0 24px 70px rgba(15,23,42,.22);
+}
+.typedModal-rent .modalCard{border-top-color:#d97706}
+.typedModal-tenant .modalCard{border-top-color:#2563eb}
+.typedModal-service .modalCard{border-top-color:#059669}
+.typedModal-task .modalCard{border-top-color:#7c3aed}
+.typedModal-maintenance .modalCard{border-top-color:#dc2626}
+.typedModal-inspection .modalCard{border-top-color:#0891b2}
+.typedModal-object .modalCard{border-top-color:#475569}
+
+.modalTypePill{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  width:max-content;
+  margin:0 0 7px;
+  padding:5px 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  line-height:1;
+  letter-spacing:.035em;
+  text-transform:uppercase;
+}
+.modalTypePillIcon{
+  display:grid;
+  place-items:center;
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  font-size:11px;
+}
+.typedModal-rent .modalTypePill{background:#fff7ed;color:#9a3412}
+.typedModal-rent .modalTypePillIcon{background:#d97706;color:#fff}
+.typedModal-tenant .modalTypePill{background:#eff6ff;color:#1d4ed8}
+.typedModal-tenant .modalTypePillIcon{background:#2563eb;color:#fff}
+.typedModal-service .modalTypePill{background:#ecfdf5;color:#047857}
+.typedModal-service .modalTypePillIcon{background:#059669;color:#fff}
+.typedModal-task .modalTypePill{background:#f5f3ff;color:#6d28d9}
+.typedModal-task .modalTypePillIcon{background:#7c3aed;color:#fff}
+.typedModal-maintenance .modalTypePill{background:#fef2f2;color:#b91c1c}
+.typedModal-maintenance .modalTypePillIcon{background:#dc2626;color:#fff}
+.typedModal-inspection .modalTypePill{background:#ecfeff;color:#0e7490}
+.typedModal-inspection .modalTypePillIcon{background:#0891b2;color:#fff}
+.typedModal-object .modalTypePill{background:#f1f5f9;color:#334155}
+.typedModal-object .modalTypePillIcon{background:#475569;color:#fff}
+
+.tenantReportViewerBody{display:grid;gap:16px}
+.tenantReportViewerSummary{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  padding:14px;
+  border:1px solid #bfdbfe;
+  border-radius:14px;
+  background:#eff6ff;
+}
+.tenantReportViewerSummary div{min-width:0}
+.tenantReportViewerSummary span{
+  display:block;
+  margin-bottom:3px;
+  color:#64748b;
+  font-size:11px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.tenantReportViewerSummary strong{
+  display:block;
+  color:#172033;
+  word-break:break-word;
+}
+.tenantReportViewerDescription{
+  padding:14px;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#f8fafc;
+  white-space:pre-wrap;
+  line-height:1.55;
+}
+.tenantReportViewerPhoto{
+  display:block;
+  width:100%;
+  max-height:62vh;
+  object-fit:contain;
+  border:1px solid #dbe4ef;
+  border-radius:14px;
+  background:#f8fafc;
+}
+.tenantReportViewerState{
+  padding:18px;
+  border-radius:14px;
+  background:#f8fafc;
+  color:#475569;
+  text-align:center;
+  font-weight:700;
+}
+@media(max-width:640px){
+  .tenantReportViewerSummary{grid-template-columns:1fr}
+  .tenantReportViewerPhoto{max-height:52vh}
+}

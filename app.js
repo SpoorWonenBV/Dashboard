@@ -53,6 +53,96 @@ const escAttr = value => String(value || '').replace(/&/g,'&amp;').replace(/"/g,
 const escHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 
 
+/* v40.43: herkenbare pop-ups per onderdeel */
+let activeTenantReportModalId=null;
+
+function ensureTypedModalStylesheet(){
+  if(document.getElementById('typedModalStylesV4043')) return;
+  const link=document.createElement('link');
+  link.id='typedModalStylesV4043';
+  link.rel='stylesheet';
+  link.href='/modal-types-v40-43.css';
+  document.head.appendChild(link);
+}
+
+function decorateModal(modalId,type,label,icon){
+  const modal=el(modalId);
+  if(!modal) return;
+  modal.classList.add('typedModal',`typedModal-${type}`);
+  const titleGroup=modal.querySelector('.modalHeader > div');
+  if(!titleGroup||titleGroup.querySelector('.modalTypePill')) return;
+  const pill=document.createElement('span');
+  pill.className='modalTypePill';
+  const pillIcon=document.createElement('span');
+  pillIcon.className='modalTypePillIcon';
+  pillIcon.textContent=icon;
+  const pillLabel=document.createElement('span');
+  pillLabel.textContent=label;
+  pill.append(pillIcon,pillLabel);
+  titleGroup.prepend(pill);
+}
+
+function ensureTenantReportModal(){
+  let modal=el('tenantReportModal');
+  if(modal) return modal;
+  modal=document.createElement('div');
+  modal.id='tenantReportModal';
+  modal.className='modal hidden typedModal typedModal-tenant';
+  modal.setAttribute('role','dialog');
+  modal.setAttribute('aria-modal','true');
+  modal.setAttribute('aria-labelledby','tenantReportModalTitle');
+  modal.innerHTML=`
+    <div class="modalCard largeModal tenantReportModalCard">
+      <div class="modalHeader">
+        <div>
+          <span class="modalTypePill"><span class="modalTypePillIcon">!</span><span>Huurdersmelding</span></span>
+          <h2 id="tenantReportModalTitle">Melding bekijken</h2>
+          <p id="tenantReportModalMeta" class="meta"></p>
+        </div>
+        <button id="closeTenantReportModalBtn" class="iconBtn" type="button" aria-label="Huurdersmelding sluiten">×</button>
+      </div>
+      <div class="tenantReportViewerBody">
+        <div class="tenantReportViewerSummary">
+          <div><span>Status</span><strong id="tenantReportModalStatus">-</strong></div>
+          <div><span>Urgentie</span><strong id="tenantReportModalUrgency">-</strong></div>
+          <div><span>Melder</span><strong id="tenantReportModalReporter">-</strong></div>
+          <div><span>Contact</span><strong id="tenantReportModalContact">-</strong></div>
+        </div>
+        <div id="tenantReportModalDescription" class="tenantReportViewerDescription"></div>
+        <div id="tenantReportModalPhotoState" class="tenantReportViewerState">Foto wordt veilig geladen…</div>
+        <img id="tenantReportModalPhoto" class="tenantReportViewerPhoto hidden" alt="Foto bij de huurdersmelding">
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  el('closeTenantReportModalBtn')?.addEventListener('click',closeTenantReportModal);
+  modal.addEventListener('click',event=>{if(event.target===modal) closeTenantReportModal();});
+  return modal;
+}
+
+function closeTenantReportModal(){
+  const modal=el('tenantReportModal');
+  modal?.classList.add('hidden');
+  const image=el('tenantReportModalPhoto');
+  if(image){image.removeAttribute('src');image.classList.add('hidden');}
+  activeTenantReportModalId=null;
+}
+
+function initializeTypedModals(){
+  ensureTypedModalStylesheet();
+  decorateModal('rentIncreaseModal','rent','Huurverhoging','€');
+  decorateModal('serviceCostModal','service','Servicekosten','€');
+  decorateModal('issueQrModal','tenant','Huurdersmelding · QR','!');
+  decorateModal('taskModal','task','Taak','✓');
+  decorateModal('maintenanceEditModal','maintenance','Onderhoud','!');
+  decorateModal('inspectionModal','inspection','Inspectie','i');
+  decorateModal('propertyModal','object','Object','O');
+  ensureTenantReportModal();
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&!el('tenantReportModal')?.classList.contains('hidden')) closeTenantReportModal();
+  });
+}
+
+
 /* v39: strengere sessiebeveiliging */
 const REMEMBER_LOGIN_KEY='vastgoedRememberLogin';
 const SESSION_STARTED_KEY='vastgoedSessionStartedAt';
@@ -338,7 +428,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=38.4',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=40.43',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -3991,24 +4081,59 @@ function tenantReportTone(report){
   return report.status==='Nieuw'?'warning':'neutral';
 }
 
-async function openTenantReportPhoto(path){
-  const cleanPath=clean(path);
-  if(!cleanPath){
-    alert('Bij deze melding is geen foto opgeslagen.');
+async function openTenantReportPhoto(reportId){
+  const report=rawTenantIssueReports.find(item=>String(item.id)===String(reportId));
+  if(!report){
+    alert('Deze huurdersmelding kon niet worden gevonden.');
     return;
   }
+
+  const modal=ensureTenantReportModal();
+  const property=tenantReportProperty(report);
+  activeTenantReportModalId=report.id;
+  el('tenantReportModalTitle').textContent=report.category||'Huurdersmelding';
+  el('tenantReportModalMeta').textContent=[
+    property?.object,
+    report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'' ,
+    `Referentie ${String(report.id).slice(0,8).toUpperCase()}`
+  ].filter(Boolean).join(' · ');
+  el('tenantReportModalStatus').textContent=report.status||'-';
+  el('tenantReportModalUrgency').textContent=report.urgency||'-';
+  el('tenantReportModalReporter').textContent=report.reporter_name||'-';
+  el('tenantReportModalContact').textContent=[report.phone,report.email,report.availability?`Bereikbaar: ${report.availability}`:''].filter(Boolean).join(' · ')||'-';
+  el('tenantReportModalDescription').textContent=report.description||'Geen omschrijving opgeslagen.';
+
+  const image=el('tenantReportModalPhoto');
+  const state=el('tenantReportModalPhotoState');
+  image.removeAttribute('src');
+  image.classList.add('hidden');
+  state.classList.remove('hidden');
+  state.textContent=report.photo_path?'Foto wordt veilig geladen…':'Bij deze melding is geen foto opgeslagen.';
+  modal.classList.remove('hidden');
+
+  if(!clean(report.photo_path)) return;
 
   const result=await sb
     .storage
     .from('tenant-issue-photos')
-    .createSignedUrl(cleanPath,300);
+    .createSignedUrl(clean(report.photo_path),300);
 
+  if(activeTenantReportModalId!==report.id) return;
   if(result.error||!result.data?.signedUrl){
-    alert('De foto kon niet worden geopend: '+(result.error?.message||'onbekende fout'));
+    state.textContent='De foto kon niet worden geopend: '+(result.error?.message||'onbekende fout');
     return;
   }
 
-  window.open(result.data.signedUrl,'_blank','noopener,noreferrer');
+  image.onload=()=>{
+    if(activeTenantReportModalId!==report.id) return;
+    state.classList.add('hidden');
+    image.classList.remove('hidden');
+  };
+  image.onerror=()=>{
+    state.textContent='De foto kon niet in het dashboard worden weergegeven.';
+    image.classList.add('hidden');
+  };
+  image.src=result.data.signedUrl;
 }
 
 function tenantReportContact(report){
@@ -4106,7 +4231,7 @@ function renderTenantIssueReports(){
               <td>${escHtml(received)}<span class="subtle">Ref. ${escHtml(String(report.id).slice(0,8).toUpperCase())}</span></td>
               <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Object verwijderd</span>'}</td>
               <td><strong>${escHtml(report.category)}</strong><span class="tenantReportDescription">${escHtml(report.description)}</span></td>
-              <td>${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:'<span class="subtle">Geen foto</span>'}</td>
+              <td>${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-report-id="${escAttr(report.id)}">Foto bekijken</button>`:'<span class="subtle">Geen foto</span>'}</td>
               <td><span class="tenantReportContact">${escHtml(tenantReportContact(report))}</span></td>
               <td>${statusBadge([report.urgency,report.urgency==='Spoed'?'danger':report.urgency==='Hoog'?'warning':'ok'])}</td>
               <td>
@@ -4214,7 +4339,7 @@ function tenantReportsForPropertyHtml(propertyId){
         <strong>${escHtml(report.category)}</strong>
         <span>${statusBadge([report.status,tenantReportTone(report)])} ${report.submitted_at?new Date(report.submitted_at).toLocaleDateString('nl-NL'):'-'}</span>
         <small>${escHtml(report.description)}</small>
-        ${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:''}
+        ${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-report-id="${escAttr(report.id)}">Foto bekijken</button>`:''}
       </div>
     </div>
   `).join('');
@@ -6429,6 +6554,7 @@ function init(){
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
   sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storage:secureAuthStorage}});
   bindSessionSecurityEvents();
+  initializeTypedModals();
   if(el('rememberLogin')) el('rememberLogin').checked=rememberLoginEnabled();
   initSidebar();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
@@ -6468,7 +6594,7 @@ function init(){
     if(newTaskForObject) openTaskModal('',newTaskForObject.dataset.id||'');
     if(issueQr) openIssueQrModal(issueQr.dataset.id);
     if(convertTenantReport) convertTenantReportToMaintenance(convertTenantReport.dataset.reportId);
-    if(tenantReportPhoto) openTenantReportPhoto(tenantReportPhoto.dataset.photoPath);
+    if(tenantReportPhoto) openTenantReportPhoto(tenantReportPhoto.dataset.reportId);
     if(detail&&!taskEdit) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
