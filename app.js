@@ -996,6 +996,320 @@ function openRentConceptLetter(){
   }
 }
 
+
+function rentLetterExcelCell(value,{type='String',style='',mergeAcross=0,index=null}={}){
+  const attrs=[];
+  if(style) attrs.push(`ss:StyleID="${style}"`);
+  if(mergeAcross) attrs.push(`ss:MergeAcross="${mergeAcross}"`);
+  if(index!==null) attrs.push(`ss:Index="${index}"`);
+  const safeType=type==='Number'?'Number':'String';
+  const content=safeType==='Number'&&Number.isFinite(Number(value))
+    ? Number(value)
+    : excelXmlEscape(value??'');
+  return `<Cell${attrs.length?' '+attrs.join(' '):''}><Data ss:Type="${safeType}">${content}</Data></Cell>`;
+}
+
+function rentLetterExcelRow(cells,{height=null}={}){
+  return `<Row${height?` ss:Height="${height}"`:''}>${cells.join('')}</Row>`;
+}
+
+function rentLetterDownloadName(data){
+  const objectName=clean(data?.r?.object)||'object';
+  const safeObject=objectName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-zA-Z0-9_-]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,60)||'object';
+  return `conceptbrief-huuraanpassing-${safeObject}-${data.effective_date||'datum'}.xls`;
+}
+
+function createRentLetterExcelXml(data){
+  const r=data.r;
+  const effectiveLong=new Intl.DateTimeFormat('nl-NL',{
+    day:'numeric',month:'long',year:'numeric',timeZone:'UTC'
+  }).format(new Date(`${data.effective_date}T00:00:00Z`));
+
+  const currentRent=Number(data.current_rent||0);
+  const serviceCosts=Number(data.service_costs||0);
+  const finalRent=Number(data.final_rent||0);
+  const oldIndex=Number(data.old_index||0);
+  const newIndex=Number(data.new_index||0);
+  const ratio=oldIndex>0&&newIndex>0?newIndex/oldIndex:1;
+  const indexedServiceCosts=Math.round(serviceCosts*ratio*100)/100;
+  const currentTotal=Math.round((currentRent+serviceCosts)*100)/100;
+  const rentIncrease=Math.round((finalRent-currentRent)*100)/100;
+  const finalTotal=Math.round((finalRent+indexedServiceCosts)*100)/100;
+  const oldPeriod=longMonthYear(`${data.old_period}-01`);
+  const newPeriod=longMonthYear(`${data.new_period}-01`);
+  const recipientAddress=[r.straatnaam,r.huisnummer].filter(Boolean).join(' ');
+  const recipientCity=[r.postcode,r.stad].filter(Boolean).join(' ');
+  const manualOverride=Number.isFinite(Number(data.calculated_rent))&&
+    Math.abs(finalRent-Number(data.calculated_rent))>0.01;
+
+  const rows=[
+    rentLetterExcelRow([
+      rentLetterExcelCell('CONCEPT – controleer en pas de brief waar nodig handmatig aan.',{
+        style:'ConceptNotice',mergeAcross:3
+      })
+    ],{height:30}),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:18}),
+    rentLetterExcelRow([rentLetterExcelCell(r.huurder||'-',{mergeAcross:3})]),
+    rentLetterExcelRow([rentLetterExcelCell(recipientAddress||'-',{mergeAcross:3})]),
+    rentLetterExcelRow([rentLetterExcelCell(recipientCity||'-',{mergeAcross:3})]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:32}),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Betreft :',{style:'SubjectLabel'}),
+      rentLetterExcelCell(`Huuraanpassing per ${effectiveLong}`,{style:'Subject',mergeAcross:2})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:28}),
+    rentLetterExcelRow([rentLetterExcelCell('Geachte mevrouw / heer,',{mergeAcross:3})]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:18}),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Hierbij delen wij u mede, dat de huur van het in hoofde genoemde object ingaande',{
+        style:'WrapText',mergeAcross:3
+      })
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`${effectiveLong} zal worden verhoogd overeenkomstig artikel 4 van de met u gesloten`,{
+        style:'WrapText',mergeAcross:3
+      })
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell('overeenkomst.',{style:'WrapText',mergeAcross:3})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:18}),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`De berekening van de ingaande ${effectiveLong} verschuldigde huurprijs is als volgt:`,{
+        style:'WrapText',mergeAcross:3
+      })
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:18}),
+
+    rentLetterExcelRow([
+      rentLetterExcelCell('De thans verschuldigde huurprijs bedraagt excl. BTW',{mergeAcross:1}),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(currentTotal,{type:'Number',style:'Money'})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:10}),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Af : voorschot servicekosten',{mergeAcross:1}),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(serviceCosts,{type:'Number',style:'MoneyUnderline'})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell('',{mergeAcross:1}),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(currentRent,{type:'Number',style:'Money'})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:14}),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`Prijsindexcijfer ${newPeriod}`),
+      rentLetterExcelCell(newIndex,{type:'Number',style:'IndexNumber'}),
+      rentLetterExcelCell('',{mergeAcross:1})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`Prijsindexcijfer ${oldPeriod}`),
+      rentLetterExcelCell(oldIndex,{type:'Number',style:'IndexNumber'}),
+      rentLetterExcelCell('',{mergeAcross:1})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:14}),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Huurverhoging',{style:'CalculationHeading',mergeAcross:3})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`(=${newIndex.toFixed(2)} / ${oldIndex.toFixed(2)} x ${currentRent.toFixed(2)}) - ${currentRent.toFixed(2)} =`,{
+        mergeAcross:1
+      }),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(rentIncrease,{type:'Number',style:'MoneyUnderline'})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell('',{mergeAcross:1}),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(finalRent,{type:'Number',style:'Money'})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:14}),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Bij: voor de kosten van bijkomende leveringen en diensten',{mergeAcross:3})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell('Verhoging',{style:'CalculationHeading',mergeAcross:3})
+    ]),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`(=${newIndex.toFixed(2)} / ${oldIndex.toFixed(2)} x ${serviceCosts.toFixed(2)}) =`,{
+        mergeAcross:1
+      }),
+      rentLetterExcelCell('€',{style:'CurrencySymbol'}),
+      rentLetterExcelCell(indexedServiceCosts,{type:'Number',style:'Money'})
+    ]),
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:10}),
+    rentLetterExcelRow([
+      rentLetterExcelCell(`De per ${effectiveLong} verschuldigde huurprijs bedraagt excl. BTW`,{
+        style:'FinalLabel',mergeAcross:1
+      }),
+      rentLetterExcelCell('€',{style:'FinalCurrency'}),
+      rentLetterExcelCell(finalTotal,{type:'Number',style:'FinalMoney'})
+    ])
+  ];
+
+  if(manualOverride){
+    rows.push(
+      rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:16}),
+      rentLetterExcelRow([
+        rentLetterExcelCell(
+          `Handmatige aanpassing: de definitieve kale huur is vastgesteld op € ${finalRent.toFixed(2)}.`+
+          (data.override_reason?` Reden: ${data.override_reason}.`:''),
+          {style:'OverrideNote',mergeAcross:3}
+        )
+      ],{height:36})
+    );
+  }
+
+  rows.push(
+    rentLetterExcelRow([rentLetterExcelCell('',{mergeAcross:3})],{height:24}),
+    rentLetterExcelRow([
+      rentLetterExcelCell(
+        'Dit Excel-bestand is een bewerkbaar concept. Er wordt niets automatisch verzonden of opgeslagen.',
+        {style:'FooterNote',mergeAcross:3}
+      )
+    ])
+  );
+
+  const generatedAt=new Date();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Author>Vastgoed-dashboard</Author>
+  <Created>${generatedAt.toISOString()}</Created>
+  <Title>Concept huuraanpassing ${excelXmlEscape(r.object||'')}</Title>
+ </DocumentProperties>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Font ss:FontName="Arial" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="ConceptNotice">
+   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:Bold="1" ss:Color="#9A3412"/>
+   <Interior ss:Color="#FFF7ED" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FED7AA"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FED7AA"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FED7AA"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FED7AA"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="SubjectLabel"><Font ss:Bold="1"/></Style>
+  <Style ss:ID="Subject"><Font ss:Bold="1"/></Style>
+  <Style ss:ID="WrapText"><Alignment ss:WrapText="1" ss:Vertical="Top"/></Style>
+  <Style ss:ID="CurrencySymbol"><Alignment ss:Horizontal="Right"/></Style>
+  <Style ss:ID="Money"><Alignment ss:Horizontal="Right"/><NumberFormat ss:Format="#,##0.00"/></Style>
+  <Style ss:ID="MoneyUnderline">
+   <Alignment ss:Horizontal="Right"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders>
+  </Style>
+  <Style ss:ID="IndexNumber"><NumberFormat ss:Format="0.000"/></Style>
+  <Style ss:ID="CalculationHeading"><Font ss:Bold="1" ss:Italic="1"/></Style>
+  <Style ss:ID="FinalLabel"><Font ss:Bold="1" ss:Italic="1"/></Style>
+  <Style ss:ID="FinalCurrency">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:Bold="1" ss:Italic="1"/>
+   <Borders>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="FinalMoney">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:Bold="1" ss:Italic="1"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+   <Borders>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="OverrideNote">
+   <Alignment ss:WrapText="1" ss:Vertical="Center"/>
+   <Font ss:Size="10"/>
+   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="FooterNote">
+   <Alignment ss:WrapText="1"/>
+   <Font ss:Italic="1" ss:Size="9" ss:Color="#64748B"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Conceptbrief">
+  <Table ss:ExpandedColumnCount="4" ss:ExpandedRowCount="${rows.length}" x:FullColumns="1" x:FullRows="1">
+   <Column ss:Width="250"/>
+   <Column ss:Width="105"/>
+   <Column ss:Width="28"/>
+   <Column ss:Width="92"/>
+   ${rows.join('\n   ')}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <Selected/>
+   <PageSetup>
+    <Layout x:Orientation="Portrait"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.75" x:Right="0.75" x:Top="0.75"/>
+   </PageSetup>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>600</HorizontalResolution>
+    <VerticalResolution>600</VerticalResolution>
+   </Print>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+}
+
+function downloadRentConceptExcel(){
+  const message=el('rentIncreaseMessage');
+  const button=el('rentLetterExcelBtn');
+
+  try{
+    if(button) button.disabled=true;
+    if(message) message.textContent='Bewerkbare Excel-conceptbrief wordt gemaakt...';
+
+    const data=proposalLetterData();
+    const xml=createRentLetterExcelXml(data);
+    const blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+
+    link.href=url;
+    link.download=rentLetterDownloadName(data);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+
+    if(message){
+      message.textContent='Excel-conceptbrief gedownload. Het bestand is lokaal en volledig bewerkbaar.';
+    }
+  }catch(error){
+    console.error(error);
+    if(message) message.textContent='Excel-conceptbrief kan niet worden gemaakt: '+error.message;
+  }finally{
+    if(button) button.disabled=false;
+  }
+}
+
 async function markRentNotIncreased(propertyId,effectiveDate){
   const r=getPropertyById(propertyId);
   if(!r||!r.contract?.id) return;
@@ -5110,6 +5424,7 @@ function init(){
   el('rentFinalRent')?.addEventListener('input',()=>{el('rentFinalRent').dataset.autoCalculated='false';});
   el('rentProposalStatus')?.addEventListener('change',updateRentApplyButton);
   el('rentLetterBtn')?.addEventListener('click',openRentConceptLetter);
+  el('rentLetterExcelBtn')?.addEventListener('click',downloadRentConceptExcel);
   el('skipRentIncreaseBtn')?.addEventListener('click',skipActiveRentIncrease);
   el('applyRentIncreaseBtn')?.addEventListener('click',applyRentIncrease);
   document.querySelectorAll('.rentPropertyTab').forEach(button=>button.addEventListener('click',()=>setRentPropertyGroup(button.dataset.rentPropertyGroup)));
