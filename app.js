@@ -3991,6 +3991,26 @@ function tenantReportTone(report){
   return report.status==='Nieuw'?'warning':'neutral';
 }
 
+async function openTenantReportPhoto(path){
+  const cleanPath=clean(path);
+  if(!cleanPath){
+    alert('Bij deze melding is geen foto opgeslagen.');
+    return;
+  }
+
+  const result=await sb
+    .storage
+    .from('tenant-issue-photos')
+    .createSignedUrl(cleanPath,300);
+
+  if(result.error||!result.data?.signedUrl){
+    alert('De foto kon niet worden geopend: '+(result.error?.message||'onbekende fout'));
+    return;
+  }
+
+  window.open(result.data.signedUrl,'_blank','noopener,noreferrer');
+}
+
 function tenantReportContact(report){
   return [
     report.reporter_name,
@@ -4078,7 +4098,7 @@ function renderTenantIssueReports(){
     <div class="panel tenantReportTablePanel">
       <div class="tenantReportTableWrap">
         <table id="tenantReportTable">
-          <tr><th>Ontvangen</th><th>Object</th><th>Melding</th><th>Melder</th><th>Urgentie</th><th>Status</th><th>Acties</th></tr>
+          <tr><th>Ontvangen</th><th>Object</th><th>Melding</th><th>Foto</th><th>Melder</th><th>Urgentie</th><th>Status</th><th>Acties</th></tr>
           ${rows.map(report=>{
             const property=tenantReportProperty(report);
             const received=report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'-';
@@ -4086,6 +4106,7 @@ function renderTenantIssueReports(){
               <td>${escHtml(received)}<span class="subtle">Ref. ${escHtml(String(report.id).slice(0,8).toUpperCase())}</span></td>
               <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Object verwijderd</span>'}</td>
               <td><strong>${escHtml(report.category)}</strong><span class="tenantReportDescription">${escHtml(report.description)}</span></td>
+              <td>${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:'<span class="subtle">Geen foto</span>'}</td>
               <td><span class="tenantReportContact">${escHtml(tenantReportContact(report))}</span></td>
               <td>${statusBadge([report.urgency,report.urgency==='Spoed'?'danger':report.urgency==='Hoog'?'warning':'ok'])}</td>
               <td>
@@ -4098,7 +4119,7 @@ function renderTenantIssueReports(){
                 ${report.converted_maintenance_id?`<span class="subtle">Onderhoud gekoppeld</span>`:''}
               </td>
             </tr>`;
-          }).join('')||'<tr><td colspan="7">Geen huurdersmeldingen binnen dit filter.</td></tr>'}
+          }).join('')||'<tr><td colspan="8">Geen huurdersmeldingen binnen dit filter.</td></tr>'}
         </table>
       </div>
     </div>`;
@@ -4142,8 +4163,9 @@ async function convertTenantReportToMaintenance(reportId){
     '',
     `Huurdersmelding ontvangen: ${report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'-'}`,
     `Melder: ${contact}`,
-    `Referentie: ${String(report.id).slice(0,8).toUpperCase()}`
-  ].join('\n');
+    `Referentie: ${String(report.id).slice(0,8).toUpperCase()}`,
+    report.photo_path?'Foto beschikbaar in de oorspronkelijke huurdersmelding.':''
+  ].filter(Boolean).join('\n');
 
   const maintenanceResult=await sb
     .from('maintenance')
@@ -4192,6 +4214,7 @@ function tenantReportsForPropertyHtml(propertyId){
         <strong>${escHtml(report.category)}</strong>
         <span>${statusBadge([report.status,tenantReportTone(report)])} ${report.submitted_at?new Date(report.submitted_at).toLocaleDateString('nl-NL'):'-'}</span>
         <small>${escHtml(report.description)}</small>
+        ${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:''}
       </div>
     </div>
   `).join('');
@@ -6440,10 +6463,12 @@ function init(){
     const newTaskForObject=e.target.closest('.newTaskForObjectBtn');
     const issueQr=e.target.closest('.issueQrBtn');
     const convertTenantReport=e.target.closest('.convertTenantReportBtn');
+    const tenantReportPhoto=e.target.closest('.tenantReportPhotoBtn');
     if(taskEdit) openTaskModal(taskEdit.dataset.taskId);
     if(newTaskForObject) openTaskModal('',newTaskForObject.dataset.id||'');
     if(issueQr) openIssueQrModal(issueQr.dataset.id);
     if(convertTenantReport) convertTenantReportToMaintenance(convertTenantReport.dataset.reportId);
+    if(tenantReportPhoto) openTenantReportPhoto(tenantReportPhoto.dataset.photoPath);
     if(detail&&!taskEdit) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
