@@ -77,6 +77,10 @@
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span>
         <span class="navLabel">Agenda</span>
       </button>
+      <button class="nav" data-page="taken" data-title="Taken">
+        <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 5h11M9 12h11M9 19h11"/><path d="m3.5 5 1.5 1.5L7.5 4M3.5 12 5 13.5 7.5 11M3.5 19 5 20.5 7.5 18"/></svg></span>
+        <span class="navLabel">Taken</span>
+      </button>
       <button class="nav" data-page="meldingen" data-title="Meldingen">
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>
         <span class="navLabel">Meldingen</span>
@@ -123,6 +127,7 @@
           <div class="card"><span>Energielabel &lt; 180 dagen</span><strong id="energySoon">-</strong></div>
           <div class="card"><span>Leegstand / geen huurder</span><strong id="vacancyCount">-</strong></div>
           <div class="card"><span>Objecten niet compleet</span><strong id="dataCheckIssuesCount">-</strong></div>
+          <div class="card"><span>Openstaande taken</span><strong id="openTaskCount">-</strong></div>
         </div>
         <div class="dashboardInsights">
           <div class="panel">
@@ -239,7 +244,7 @@
         <div class="panel agendaIntro">
           <div>
             <h2>Kalender en agenda</h2>
-            <p>Automatisch overzicht van contractmomenten, onderhoud, huurverhogingen, inspecties en energielabels uit het dashboard.</p>
+            <p>Automatisch overzicht van taken, contractmomenten, onderhoud, huurverhogingen, inspecties en energielabels uit het dashboard.</p>
           </div>
           <div class="agendaControls">
             <button id="agendaPrevBtn" class="secondaryBtn agendaNavBtn" type="button" aria-label="Vorige maand">←</button>
@@ -258,6 +263,7 @@
               <option value="finance">Financieel</option>
               <option value="inspection">Inspecties</option>
               <option value="energy">Energielabels</option>
+              <option value="task">Taken</option>
             </select>
           </label>
         </div>
@@ -273,6 +279,30 @@
           <div class="panel">
             <h2>Afgelopen 90 dagen</h2>
             <div id="agendaRecentList" class="agendaEventList"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="taken" class="page">
+        <div class="panel taskIntro">
+          <div>
+            <h2>Taken</h2>
+            <p>Leg acties vast met een deadline, prioriteit, status en eventueel een gekoppeld object. Taken met een deadline verschijnen automatisch in de Agenda.</p>
+          </div>
+          <button id="newTaskBtn" type="button">+ Taak</button>
+        </div>
+
+        <div id="taskSetupWarning" class="importNotice warning hidden">
+          <strong>Eenmalige Supabase-instelling nodig</strong>
+          <span>Voer eerst het meegeleverde SQL-bestand uit. Daarna kunnen taken veilig worden opgeslagen.</span>
+        </div>
+
+        <div id="taskSummary" class="cards taskSummaryCards"></div>
+        <div id="taskFilters"></div>
+
+        <div class="panel taskTablePanel">
+          <div class="taskTableWrap">
+            <table id="taskTable"></table>
           </div>
         </div>
       </section>
@@ -604,6 +634,52 @@
     </div>
   </div>
 
+
+  <div id="taskModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="modalHeader">
+        <div>
+          <h2 id="taskModalTitle">Taak toevoegen</h2>
+          <p class="meta">Koppel de taak eventueel aan een object en leg de opvolging vast.</p>
+        </div>
+        <button id="closeTaskModalBtn" class="iconBtn" type="button">×</button>
+      </div>
+
+      <form id="taskForm">
+        <input type="hidden" id="taskId">
+        <div class="formGrid">
+          <label>Onderwerp<input id="taskTitle" maxlength="180" required placeholder="Bijvoorbeeld contractverlenging bespreken"></label>
+          <label>Object<select id="taskPropertyId"><option value="">Geen object gekoppeld</option></select></label>
+          <label>Deadline<input id="taskDueDate" type="date"></label>
+          <label>Prioriteit
+            <select id="taskPriority">
+              <option>Laag</option>
+              <option selected>Normaal</option>
+              <option>Hoog</option>
+              <option>Urgent</option>
+            </select>
+          </label>
+          <label>Status
+            <select id="taskStatus">
+              <option>Open</option>
+              <option>In behandeling</option>
+              <option>Wachten op huurder</option>
+              <option>Wachten op leverancier</option>
+              <option>Afgerond</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Notitie<textarea id="taskDescription" rows="5" placeholder="Aanvullende informatie, afspraken of vervolgstappen"></textarea></label>
+
+        <div class="formActions">
+          <button type="button" id="deleteTaskBtn" class="dangerBtn hidden">Taak verwijderen</button>
+          <button type="submit">Taak opslaan</button>
+        </div>
+      </form>
+      <p id="taskMessage" class="formMessage"></p>
+    </div>
+  </div>
 
   <div id="maintenanceEditModal" class="modal hidden">
     <div class="modalCard">

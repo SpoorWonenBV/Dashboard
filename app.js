@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', notificationTypeFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
+let sb, query = '', notificationTypeFilter = '', taskStatusFilter = 'open', taskPriorityFilter = '', taskObjectFilter = '', taskDateFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawTasks = [], tasksReady = true, rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -2618,7 +2618,7 @@ function contractTimeline(contract={}){
 const monthMap={januari:0,februari:1,maart:2,april:3,mei:4,juni:5,juli:6,augustus:7,september:8,oktober:9,november:10,december:11};
 function daysUntilRentIncrease(monthName){ if(!monthName) return null; const key=String(monthName).trim().toLowerCase(); if(!(key in monthMap)) return null; const today=new Date(); today.setHours(0,0,0,0); let target=new Date(today.getFullYear(), monthMap[key], 1); if(target<today) target=new Date(today.getFullYear()+1, monthMap[key], 1); return Math.ceil((target-today)/(1000*60*60*24)); }
 function rentIncreaseStatus(monthName){ const days=daysUntilRentIncrease(monthName); if(days===null) return ['Niet ingesteld','warning']; if(days<=30) return ['Deze maand/komende 30 dagen','danger']; if(days<=60) return ['Binnen 60 dagen','warning']; return ['Op orde','ok']; }
-function actionItem(sev,type,title,text,objectId){ return {sev,type,title,text,objectId}; }
+function actionItem(sev,type,title,text,objectId,taskId){ return {sev,type,title,text,objectId,taskId}; }
 const SIDEBAR_STORAGE_KEY='vastgoedSidebarCollapsed';
 function setSidebarCollapsed(collapsed,{persist=true}={}){
   const sidebar=document.querySelector('.sidebar');
@@ -2764,7 +2764,7 @@ async function checkSession(){
 }
 async function loadData(){
   try{
-    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr]=await Promise.all([
+    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr,tsk]=await Promise.all([
       sb.from('properties').select('*').order('created_at',{ascending:false}),
       sb.from('contracts').select('*'),
       sb.from('tenants').select('*'),
@@ -2776,7 +2776,8 @@ async function loadData(){
       sb.from('notification_settings').select('*').eq('id',1).maybeSingle(),
       sb.from('email_notification_log').select('*').order('created_at',{ascending:false}).limit(20),
       sb.from('property_inspections').select('*').order('valid_until',{ascending:true}),
-      sb.from('property_data_check_overrides').select('*').order('updated_at',{ascending:false})
+      sb.from('property_data_check_overrides').select('*').order('updated_at',{ascending:false}),
+      sb.from('property_tasks').select('*').order('created_at',{ascending:false})
     ]);
     [pr,cr,tr,mr,dr,hr].forEach(r=>{if(r.error) throw r.error});
     rawProperties=pr.data||[]; rawContracts=cr.data||[]; rawTenants=tr.data||[]; rawMaintenance=mr.data||[]; rawDocuments=dr.data||[]; rawMaintenanceHistory=hr.data||[];
@@ -2825,6 +2826,14 @@ async function loadData(){
     }else{
       rawDataCheckOverrides=dcr.data||[];
       dataCheckOverridesReady=true;
+    }
+    if(tsk.error){
+      console.warn('Takentabel nog niet beschikbaar:',tsk.error.message);
+      rawTasks=[];
+      tasksReady=false;
+    }else{
+      rawTasks=tsk.data||[];
+      tasksReady=true;
     }
     vastgoedData=normalize(rawProperties, rawContracts, rawTenants, rawMaintenance, rawDocuments, rawMaintenanceHistory);
     el('statusText').textContent=`Live data uit Supabase. Laatst geladen: ${new Date().toLocaleTimeString('nl-NL')}`;
@@ -2923,9 +2932,346 @@ function notificationItems(data){
       items.push(actionItem('warning','Keuring',`${row.inspection_type} nog te plannen: ${property?.object||'Onbekend object'}`,'Vul een keuringsdatum of volgende keuringsdatum in.',row.property_id));
     }
   });
+  rawTasks
+    .filter(task=>task.status!=='Afgerond'&&task.due_date)
+    .forEach(task=>{
+      const days=daysUntil(task.due_date);
+      if(days===null||days>7) return;
+      const property=task.property_id?getPropertyById(task.property_id):null;
+      const objectText=property?` · ${property.object}`:'';
+      if(days<0){
+        items.push(actionItem('danger','Taak',`Taak te laat: ${task.title}`,`Deadline ${dateFmt(task.due_date)}${objectText}.`,null,task.id));
+      }else if(days===0){
+        items.push(actionItem('danger','Taak',`Taak vandaag: ${task.title}`,`Deadline vandaag${objectText}.`,null,task.id));
+      }else{
+        items.push(actionItem('warning','Taak',`Taak binnen ${days} dagen: ${task.title}`,`Deadline ${dateFmt(task.due_date)}${objectText}.`,null,task.id));
+      }
+    });
+
   const score={danger:0,warning:1,ok:2};
   return items.sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9));
 }
+const TASK_STATUSES=['Open','In behandeling','Wachten op huurder','Wachten op leverancier','Afgerond'];
+const TASK_PRIORITIES=['Laag','Normaal','Hoog','Urgent'];
+
+function taskProperty(task){
+  return task?.property_id?getPropertyById(task.property_id):null;
+}
+
+function taskPriorityTone(priority){
+  if(priority==='Urgent') return 'danger';
+  if(priority==='Hoog') return 'warning';
+  if(priority==='Laag') return 'ok';
+  return 'neutral';
+}
+
+function taskStatusTone(task){
+  if(task.status==='Afgerond') return 'ok';
+  const days=daysUntil(task.due_date);
+  if(days!==null&&days<0) return 'danger';
+  if(days!==null&&days<=7) return 'warning';
+  if(String(task.status||'').startsWith('Wachten op')) return 'warning';
+  return 'neutral';
+}
+
+function taskDueInfo(task){
+  if(task.status==='Afgerond') return ['Afgerond','ok'];
+  if(!task.due_date) return ['Geen deadline','neutral'];
+  const days=daysUntil(task.due_date);
+  if(days===null) return [dateFmt(task.due_date),'neutral'];
+  if(days<0) return [`${Math.abs(days)} dagen te laat`,'danger'];
+  if(days===0) return ['Vandaag','warning'];
+  if(days===1) return ['Morgen','warning'];
+  if(days<=7) return [`Binnen ${days} dagen`,'warning'];
+  return [dateFmt(task.due_date),'ok'];
+}
+
+function taskMatchesSearch(task){
+  if(!query) return true;
+  const property=taskProperty(task);
+  const haystack=[
+    task.title,task.description,task.status,task.priority,task.due_date,
+    property?.object,property?.straatnaam,property?.huisnummer,property?.stad
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(query.toLowerCase());
+}
+
+function filteredTasks(){
+  const today=isoToday();
+  return rawTasks
+    .filter(task=>taskMatchesSearch(task))
+    .filter(task=>{
+      if(taskStatusFilter==='open') return task.status!=='Afgerond';
+      if(taskStatusFilter) return task.status===taskStatusFilter;
+      return true;
+    })
+    .filter(task=>!taskPriorityFilter||task.priority===taskPriorityFilter)
+    .filter(task=>!taskObjectFilter||task.property_id===taskObjectFilter)
+    .filter(task=>{
+      if(!taskDateFilter) return true;
+      const days=daysUntil(task.due_date);
+      if(taskDateFilter==='overdue') return task.status!=='Afgerond'&&days!==null&&days<0;
+      if(taskDateFilter==='today') return task.status!=='Afgerond'&&task.due_date===today;
+      if(taskDateFilter==='week') return task.status!=='Afgerond'&&days!==null&&days>=0&&days<=7;
+      if(taskDateFilter==='none') return !task.due_date;
+      return true;
+    })
+    .sort((a,b)=>{
+      const aDone=a.status==='Afgerond'?1:0;
+      const bDone=b.status==='Afgerond'?1:0;
+      if(aDone!==bDone) return aDone-bDone;
+      const aDate=a.due_date||'9999-12-31';
+      const bDate=b.due_date||'9999-12-31';
+      if(aDate!==bDate) return aDate.localeCompare(bDate);
+      const priorityOrder={Urgent:0,Hoog:1,Normaal:2,Laag:3};
+      const priorityCompare=(priorityOrder[a.priority]??9)-(priorityOrder[b.priority]??9);
+      if(priorityCompare!==0) return priorityCompare;
+      return String(a.title||'').localeCompare(String(b.title||''),'nl',{sensitivity:'base'});
+    });
+}
+
+function taskPropertyOptions(selected=''){
+  return `<option value="">Geen object gekoppeld</option>`+
+    vastgoedData
+      .slice()
+      .sort(compareObjectAddress)
+      .map(property=>`<option value="${escAttr(property.id)}" ${selected===property.id?'selected':''}>${escHtml(property.object)} · ${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</option>`)
+      .join('');
+}
+
+function renderTasks(){
+  const summary=el('taskSummary');
+  const filters=el('taskFilters');
+  const table=el('taskTable');
+  if(!summary||!filters||!table) return;
+
+  el('taskSetupWarning')?.classList.toggle('hidden',tasksReady);
+  if(el('newTaskBtn')) el('newTaskBtn').disabled=!tasksReady;
+
+  const today=isoToday();
+  const openTasks=rawTasks.filter(task=>task.status!=='Afgerond');
+  const overdue=openTasks.filter(task=>{const days=daysUntil(task.due_date);return days!==null&&days<0;}).length;
+  const todayCount=openTasks.filter(task=>task.due_date===today).length;
+  const weekCount=openTasks.filter(task=>{const days=daysUntil(task.due_date);return days!==null&&days>=0&&days<=7;}).length;
+  const waiting=openTasks.filter(task=>String(task.status||'').startsWith('Wachten op')).length;
+  const completed=rawTasks.filter(task=>task.status==='Afgerond').length;
+
+  summary.innerHTML=`
+    <div class="card"><span>Openstaand</span><strong>${openTasks.length}</strong></div>
+    <div class="card"><span>Te laat</span><strong>${overdue}</strong></div>
+    <div class="card"><span>Vandaag</span><strong>${todayCount}</strong></div>
+    <div class="card"><span>Komende 7 dagen</span><strong>${weekCount}</strong></div>
+    <div class="card"><span>Wachten op reactie</span><strong>${waiting}</strong></div>
+    <div class="card"><span>Afgerond</span><strong>${completed}</strong></div>
+  `;
+
+  const objectOptions=vastgoedData
+    .slice()
+    .sort(compareObjectAddress)
+    .map(property=>`<option value="${escAttr(property.id)}" ${taskObjectFilter===property.id?'selected':''}>${escHtml(property.object)}</option>`)
+    .join('');
+
+  filters.innerHTML=`<div class="maintenanceFilters taskFilterBar">
+    <label>Status
+      <select id="taskStatusFilter">
+        <option value="open" ${taskStatusFilter==='open'?'selected':''}>Alle openstaande taken</option>
+        <option value="" ${taskStatusFilter===''?'selected':''}>Alle statussen</option>
+        ${TASK_STATUSES.map(status=>`<option value="${escAttr(status)}" ${taskStatusFilter===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+      </select>
+    </label>
+    <label>Prioriteit
+      <select id="taskPriorityFilter">
+        <option value="">Alle prioriteiten</option>
+        ${TASK_PRIORITIES.map(priority=>`<option value="${escAttr(priority)}" ${taskPriorityFilter===priority?'selected':''}>${escHtml(priority)}</option>`).join('')}
+      </select>
+    </label>
+    <label>Object
+      <select id="taskObjectFilter">
+        <option value="">Alle objecten</option>
+        ${objectOptions}
+      </select>
+    </label>
+    <label>Deadline
+      <select id="taskDateFilter">
+        <option value="">Alle deadlines</option>
+        <option value="overdue" ${taskDateFilter==='overdue'?'selected':''}>Te laat</option>
+        <option value="today" ${taskDateFilter==='today'?'selected':''}>Vandaag</option>
+        <option value="week" ${taskDateFilter==='week'?'selected':''}>Komende 7 dagen</option>
+        <option value="none" ${taskDateFilter==='none'?'selected':''}>Geen deadline</option>
+      </select>
+    </label>
+  </div>`;
+
+  const rows=filteredTasks();
+  table.innerHTML=`<tr>
+    <th>Onderwerp</th>
+    <th>Object</th>
+    <th>Deadline</th>
+    <th>Prioriteit</th>
+    <th>Status</th>
+    <th>Actie</th>
+  </tr>`+rows.map(task=>{
+    const property=taskProperty(task);
+    const due=taskDueInfo(task);
+    return `<tr class="${task.status==='Afgerond'?'taskCompletedRow':''}">
+      <td>
+        <strong>${escHtml(task.title)}</strong>
+        ${task.description?`<span class="subtle taskDescriptionPreview">${escHtml(task.description)}</span>`:''}
+      </td>
+      <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Niet gekoppeld</span>'}</td>
+      <td>${statusBadge(due)}${task.due_date?`<span class="subtle">${dateFmt(task.due_date)}</span>`:''}</td>
+      <td><span class="taskPriority ${taskPriorityTone(task.priority)}">${escHtml(task.priority||'Normaal')}</span></td>
+      <td>
+        <select class="taskQuickStatus" data-id="${task.id}" ${tasksReady?'':'disabled'}>
+          ${TASK_STATUSES.map(status=>`<option ${task.status===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+        </select>
+      </td>
+      <td><button class="miniLink taskEditBtn" data-task-id="${task.id}">Bewerken</button></td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="6">Geen taken gevonden binnen dit filter.</td></tr>';
+}
+
+function openTaskModal(taskId='',propertyId=''){
+  if(!tasksReady){
+    alert('Voer eerst het meegeleverde Supabase SQL-bestand uit.');
+    return;
+  }
+
+  const task=taskId?rawTasks.find(item=>item.id===taskId):null;
+  el('taskForm').reset();
+  el('taskId').value=task?.id||'';
+  el('taskModalTitle').textContent=task?'Taak bewerken':'Taak toevoegen';
+  el('taskTitle').value=task?.title||'';
+  el('taskPropertyId').innerHTML=taskPropertyOptions(task?.property_id||propertyId||'');
+  el('taskDueDate').value=task?.due_date||'';
+  el('taskPriority').value=task?.priority||'Normaal';
+  el('taskStatus').value=task?.status||'Open';
+  el('taskDescription').value=task?.description||'';
+  el('deleteTaskBtn').classList.toggle('hidden',!task);
+  el('taskMessage').textContent='';
+  el('taskModal').classList.remove('hidden');
+  window.setTimeout(()=>el('taskTitle')?.focus(),50);
+}
+
+function closeTaskModal(){
+  el('taskModal')?.classList.add('hidden');
+}
+
+async function saveTask(event){
+  event.preventDefault();
+  if(!tasksReady) return;
+
+  const id=el('taskId').value;
+  const status=el('taskStatus').value;
+  const payload={
+    property_id:el('taskPropertyId').value||null,
+    title:clean(el('taskTitle').value),
+    description:clean(el('taskDescription').value)||null,
+    due_date:el('taskDueDate').value||null,
+    priority:el('taskPriority').value,
+    status,
+    completed_at:status==='Afgerond'?new Date().toISOString():null,
+    updated_at:new Date().toISOString()
+  };
+
+  if(!payload.title){
+    el('taskMessage').textContent='Vul een onderwerp in.';
+    return;
+  }
+
+  el('taskMessage').textContent='Taak wordt opgeslagen...';
+  const result=id
+    ? await sb.from('property_tasks').update(payload).eq('id',id).select('*').single()
+    : await sb.from('property_tasks').insert(payload).select('*').single();
+
+  if(result.error){
+    el('taskMessage').textContent='Opslaan mislukt: '+result.error.message;
+    return;
+  }
+
+  await loadData();
+  closeTaskModal();
+  setPage('taken','Taken');
+}
+
+async function updateTaskStatusQuick(select){
+  const task=rawTasks.find(item=>item.id===select.dataset.id);
+  if(!task) return;
+  const previous=task.status;
+  const status=select.value;
+  select.disabled=true;
+
+  const result=await sb
+    .from('property_tasks')
+    .update({
+      status,
+      completed_at:status==='Afgerond'?new Date().toISOString():null,
+      updated_at:new Date().toISOString()
+    })
+    .eq('id',task.id)
+    .select('*')
+    .single();
+
+  select.disabled=false;
+  if(result.error){
+    select.value=previous;
+    alert('Status bijwerken mislukt: '+result.error.message);
+    return;
+  }
+
+  const index=rawTasks.findIndex(item=>item.id===task.id);
+  if(index>=0) rawTasks[index]=result.data;
+  render();
+}
+
+async function deleteTask(){
+  const id=el('taskId').value;
+  if(!id||!confirm('Deze taak definitief verwijderen?')) return;
+
+  el('taskMessage').textContent='Taak wordt verwijderd...';
+  const result=await sb.from('property_tasks').delete().eq('id',id);
+  if(result.error){
+    el('taskMessage').textContent='Verwijderen mislukt: '+result.error.message;
+    return;
+  }
+
+  rawTasks=rawTasks.filter(task=>task.id!==id);
+  closeTaskModal();
+  render();
+}
+
+function taskListForPropertyHtml(propertyId){
+  if(!tasksReady){
+    return '<p class="empty">Voer eerst de taken-SQL uit om taken te kunnen gebruiken.</p>';
+  }
+
+  const tasks=rawTasks
+    .filter(task=>task.property_id===propertyId)
+    .sort((a,b)=>{
+      const aDone=a.status==='Afgerond'?1:0;
+      const bDone=b.status==='Afgerond'?1:0;
+      if(aDone!==bDone) return aDone-bDone;
+      return String(a.due_date||'9999-12-31').localeCompare(String(b.due_date||'9999-12-31'));
+    });
+
+  const rows=tasks.slice(0,10).map(task=>{
+    const due=taskDueInfo(task);
+    return `<div class="taskDetailItem">
+      <div>
+        <strong>${escHtml(task.title)}</strong>
+        <span>${statusBadge(due)} ${escHtml(task.status)}${task.due_date?` · ${dateFmt(task.due_date)}`:''}</span>
+      </div>
+      <button class="miniLink taskEditBtn" data-task-id="${task.id}">Bewerken</button>
+    </div>`;
+  }).join('');
+
+  return `<div class="taskDetailHeader">
+    <span>${tasks.length?`${tasks.length} gekoppelde ${tasks.length===1?'taak':'taken'}`:'Nog geen taken gekoppeld.'}</span>
+    <button class="smallBtn newTaskForObjectBtn" data-id="${propertyId}">+ Taak</button>
+  </div>
+  <div class="taskDetailList">${rows||'<p class="empty">Nog geen taken toegevoegd.</p>'}</div>`;
+}
+
 function usefulDataValue(value){
   const text=clean(value);
   return Boolean(text&&text!=='-'&&text.toLowerCase()!=='onbekend');
@@ -3350,7 +3696,7 @@ function filteredNotificationItems(items){
   return items.filter(item=>item.type===notificationTypeFilter);
 }
 
-function actionHtml(n){ return `<div class="alert ${n.sev}"><strong><span class="typeTag">${n.type}</span> ${n.title}</strong><span>${n.text}</span>${n.objectId?`<button class="miniLink detailBtn" data-id="${n.objectId}">Bekijk object</button>`:''}</div>`; }
+function actionHtml(n){ return `<div class="alert ${n.sev}"><strong><span class="typeTag">${n.type}</span> ${n.title}</strong><span>${n.text}</span>${n.objectId?`<button class="miniLink detailBtn" data-id="${n.objectId}">Bekijk object</button>`:''}${n.taskId?`<button class="miniLink taskEditBtn" data-task-id="${n.taskId}">Bekijk taak</button>`:''}</div>`; }
 function isVacant(r){ return String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-'; }
 function contractBucket(r){ if(r.contract_opgezegd) return 'Opgezegd'; if(r.contract_onbepaalde) return 'Onbepaalde tijd'; if(r.aantal_verlengingen>0) return 'Verlengd'; const d=daysUntil(r.opzegdatum); if(d===null) return 'Geen opzegdatum'; if(d<0) return 'Opzegmoment verlopen'; if(d<=90) return '0-3 mnd'; if(d<=180) return '3-6 mnd'; if(d<=365) return '6-12 mnd'; return '>12 mnd'; }
 function chartBar(label,value,total){ const width=total>0 ? Math.round((value/total)*100) : 0; return `<div class="chartRow"><div class="chartLabel"><span>${label}</span><strong>${value}</strong></div><div class="bar"><span style="width:${width}%"></span></div></div>`; }
@@ -4991,7 +5337,7 @@ function agendaWhenText(value){
   return `${Math.abs(days)} dagen geleden`;
 }
 function agendaCategoryLabel(type){
-  return ({contract:'Contract',maintenance:'Onderhoud',finance:'Financieel',inspection:'Inspectie',energy:'Energielabel'})[type]||'Overig';
+  return ({contract:'Contract',maintenance:'Onderhoud',finance:'Financieel',inspection:'Inspectie',energy:'Energielabel',task:'Taak'})[type]||'Overig';
 }
 function addAgendaEvent(target,event,seen){
   if(!event?.date||!isoParts(event.date)) return;
@@ -5076,6 +5422,26 @@ function buildAgendaEvents(data){
     }
   });
 
+  const allowedTaskPropertyIds=new Set(data.map(item=>item.id));
+  rawTasks
+    .filter(task=>task.due_date&&taskMatchesSearch(task)&&(!task.property_id||allowedTaskPropertyIds.has(task.property_id)))
+    .forEach(task=>{
+      const property=taskProperty(task);
+      const subtitle=[
+        property?.object,
+        task.status,
+        task.priority?`Prioriteit ${task.priority.toLowerCase()}`:''
+      ].filter(Boolean).join(' · ');
+      addAgendaEvent(events,{
+        date:task.due_date,
+        type:'task',
+        title:task.status==='Afgerond'?`Taak afgerond: ${task.title}`:`Taak: ${task.title}`,
+        subtitle,
+        objectId:task.property_id||null,
+        taskId:task.id
+      },seen);
+    });
+
   return events.sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title,'nl',{sensitivity:'base'}));
 }
 function agendaFilteredEvents(data){
@@ -5087,7 +5453,9 @@ function agendaListHtml(events,emptyText){
   return events.slice(0,30).map(event=>{
     const date=agendaDateFromIso(event.date);
     const dateText=date?new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'short',year:'numeric'}).format(date):dateFmt(event.date);
-    return `<button class="agendaListItem ${event.type} ${event.objectId?'detailBtn':''}" type="button" ${event.objectId?`data-id="${escAttr(event.objectId)}"`:''}>
+    const actionClass=event.taskId?'taskEditBtn':(event.objectId?'detailBtn':'');
+    const actionData=event.taskId?`data-task-id="${escAttr(event.taskId)}"`:(event.objectId?`data-id="${escAttr(event.objectId)}"`:'');
+    return `<button class="agendaListItem ${event.type} ${actionClass}" type="button" ${actionData}>
       <span class="agendaListDate">${escHtml(dateText)}</span>
       <span class="agendaListMain"><strong>${escHtml(event.title)}</strong><span>${escHtml(event.subtitle||agendaCategoryLabel(event.type))}</span></span>
       <span class="agendaListWhen">${escHtml(agendaWhenText(event.date))}</span>
@@ -5135,7 +5503,11 @@ function renderAgenda(data){
     const classes=['agendaDay'];
     if(date.getMonth()!==month) classes.push('outsideMonth');
     if(iso===todayIso) classes.push('today');
-    const visible=dayEvents.slice(0,3).map(event=>`<button class="agendaEvent ${event.type} ${event.objectId?'detailBtn':''}" type="button" title="${escAttr(`${event.title} · ${event.subtitle||''}`)}" ${event.objectId?`data-id="${escAttr(event.objectId)}"`:''}>${escHtml(event.title)}</button>`).join('');
+    const visible=dayEvents.slice(0,3).map(event=>{
+      const actionClass=event.taskId?'taskEditBtn':(event.objectId?'detailBtn':'');
+      const actionData=event.taskId?`data-task-id="${escAttr(event.taskId)}"`:(event.objectId?`data-id="${escAttr(event.objectId)}"`:'');
+      return `<button class="agendaEvent ${event.type} ${actionClass}" type="button" title="${escAttr(`${event.title} · ${event.subtitle||''}`)}" ${actionData}>${escHtml(event.title)}</button>`;
+    }).join('');
     const more=dayEvents.length>3?`<span class="agendaMore">+${dayEvents.length-3} meer</span>`:'';
     inner+=`<div class="${classes.join(' ')}"><div class="agendaDayHeader"><span class="agendaDayNumber">${date.getDate()}</span></div><div class="agendaDayEvents">${visible}${more}</div></div>`;
   }
@@ -5251,6 +5623,7 @@ function setupContractStickyHeader(){
 function render(){
   const data=filtered(), notes=notificationItems(data);
   renderDataCheck(data);
+  renderTasks();
   renderNotificationFilters(notes);
   const visibleNotifications=filteredNotificationItems(notes);
   const objectPageData=filteredObjectsForPage(data);
@@ -5265,6 +5638,7 @@ function render(){
   if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return r.energielabel_verplicht&&d!==null&&d<=180;}).length;
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
   if(el('dataCheckIssuesCount')) el('dataCheckIssuesCount').textContent=dataCheckReports(data).filter(report=>report.tone!=='ok').length;
+  if(el('openTaskCount')) el('openTaskCount').textContent=rawTasks.filter(task=>task.status!=='Afgerond').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard"><h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
@@ -5380,7 +5754,7 @@ function renderDetail(id){
   selectedPropertyId=id; const r=vastgoedData.find(x=>x.id===id); if(!r){ el('detailContent').innerHTML='<p>Object niet gevonden.</p>'; return; }
   const scope10=objectInspectionSummary(r.id,'SCOPE 10');
   const scope12=objectInspectionSummary(r.id,'SCOPE 12');
-  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)} en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.</div>`:''}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
   setPage('detail', r.object);
   refreshPhotos();
 }
@@ -5565,7 +5939,11 @@ function init(){
     const dataCheckEdit=e.target.closest('.dataCheckEditBtn');
     const dataCheckResolve=e.target.closest('.dataCheckResolveBtn');
     const dataCheckReset=e.target.closest('.dataCheckResetBtn');
-    if(detail) renderDetail(detail.dataset.id);
+    const taskEdit=e.target.closest('.taskEditBtn');
+    const newTaskForObject=e.target.closest('.newTaskForObjectBtn');
+    if(taskEdit) openTaskModal(taskEdit.dataset.taskId);
+    if(newTaskForObject) openTaskModal('',newTaskForObject.dataset.id||'');
+    if(detail&&!taskEdit) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
     if(openDoc) openDocument(openDoc.dataset.path);
@@ -5618,6 +5996,11 @@ function init(){
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{
     if(e.target.id==='notificationTypeFilter'){ notificationTypeFilter=e.target.value; render(); }
+    if(e.target.id==='taskStatusFilter'){ taskStatusFilter=e.target.value; render(); }
+    if(e.target.id==='taskPriorityFilter'){ taskPriorityFilter=e.target.value; render(); }
+    if(e.target.id==='taskObjectFilter'){ taskObjectFilter=e.target.value; render(); }
+    if(e.target.id==='taskDateFilter'){ taskDateFilter=e.target.value; render(); }
+    if(e.target.classList.contains('taskQuickStatus')) updateTaskStatusQuick(e.target);
     if(e.target.id==='dataCheckStatusFilter'){ dataCheckStatusFilter=e.target.value; render(); }
     if(e.target.id==='dataCheckGroupFilter'){ dataCheckGroupFilter=e.target.value; render(); }
     if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
@@ -5638,6 +6021,10 @@ function init(){
     if(e.target.id==='serviceCostYear'){ serviceCostYear=Number(e.target.value); renderServiceCostOverview(filtered()); }
   });
   el('newPropertyBtn').addEventListener('click', openNewProperty);
+  el('newTaskBtn')?.addEventListener('click',()=>openTaskModal());
+  el('closeTaskModalBtn')?.addEventListener('click',closeTaskModal);
+  el('taskForm')?.addEventListener('submit',saveTask);
+  el('deleteTaskBtn')?.addEventListener('click',deleteTask);
   const objectCsvInput=el('objectCsvFile');
   if(objectCsvInput){
     objectCsvInput.addEventListener('change', async e=>{
