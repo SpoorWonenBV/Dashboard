@@ -2092,6 +2092,7 @@ const DEFAULT_BRANDING={
   company_name:'Vastgoed',
   dashboard_name:'Dashboard',
   letter_city:'',
+  public_issue_page_url:'',
   login_subtitle:'Log in om je vastgoeddata te bekijken.',
   browser_title:'Vastgoed Dashboard',
   primary_color:'#101827',
@@ -2376,6 +2377,7 @@ function fillBrandingForm(){
   el('brandingCompanyName').value=branding.company_name||'';
   el('brandingDashboardName').value=branding.dashboard_name||'';
   if(el('brandingLetterCity')) el('brandingLetterCity').value=branding.letter_city||'';
+  if(el('brandingPublicIssuePageUrl')) el('brandingPublicIssuePageUrl').value=branding.public_issue_page_url||'';
   el('brandingLoginSubtitle').value=branding.login_subtitle||'';
   el('brandingBrowserTitle').value=branding.browser_title||'';
   el('brandingPrimaryColor').value=validHex(branding.primary_color,DEFAULT_BRANDING.primary_color);
@@ -2413,6 +2415,39 @@ async function removeOldBrandingFile(oldValue,newValue){
   delete brandingSignedUrlCache[oldPath];
 }
 
+function normalizePublicIssuePageUrl(value){
+  let raw=clean(value);
+  if(!raw) return null;
+  if(!/^https?:\/\//i.test(raw)) raw=`https://${raw}`;
+
+  let url;
+  try{
+    url=new URL(raw);
+  }catch(error){
+    throw new Error('Vul een geldige URL voor de openbare meldingspagina in.');
+  }
+
+  const local=['localhost','127.0.0.1','::1'].includes(url.hostname);
+  if(url.protocol!=='https:'&&!local){
+    throw new Error('De openbare meldingspagina moet een veilige https-URL gebruiken.');
+  }
+
+  url.hash='';
+  url.search='';
+  if(!/\.html$/i.test(url.pathname)&&!url.pathname.endsWith('/')){
+    url.pathname=`${url.pathname}/`;
+  }
+  return url.toString();
+}
+
+function configuredPublicIssuePageUrl(){
+  const configured=clean(branding.public_issue_page_url);
+  if(!configured){
+    throw new Error('Vul eerst bij Instellingen → Huisstijl de openbare meldingspagina URL in.');
+  }
+  return new URL(normalizePublicIssuePageUrl(configured));
+}
+
 async function saveBranding(e){
   e.preventDefault();
   const msg=el('brandingMessage');
@@ -2429,6 +2464,7 @@ async function saveBranding(e){
       company_name:clean(el('brandingCompanyName').value)||DEFAULT_BRANDING.company_name,
       dashboard_name:clean(el('brandingDashboardName').value)||DEFAULT_BRANDING.dashboard_name,
       letter_city:clean(el('brandingLetterCity')?.value)||null,
+      public_issue_page_url:normalizePublicIssuePageUrl(el('brandingPublicIssuePageUrl')?.value),
       login_subtitle:clean(el('brandingLoginSubtitle').value)||DEFAULT_BRANDING.login_subtitle,
       browser_title:clean(el('brandingBrowserTitle').value)||null,
       primary_color:validHex(el('brandingPrimaryColor').value,DEFAULT_BRANDING.primary_color),
@@ -3777,7 +3813,7 @@ async function ensureIssuePortal(propertyId){
 }
 
 function issuePortalUrl(portal){
-  const url=new URL('/melding.html',window.location.origin);
+  const url=configuredPublicIssuePageUrl();
   url.searchParams.set('token',portal.token);
   return url.toString();
 }
@@ -3815,11 +3851,14 @@ async function openIssueQrModal(propertyId){
   }
 
   try{
+    configuredPublicIssuePageUrl();
     const portal=await ensureIssuePortal(propertyId);
     el('issueQrContent').classList.remove('hidden');
     renderActiveIssueQr(portal,property);
   }catch(error){
     console.error(error);
+    el('issueQrContent').classList.add('hidden');
+    el('issueQrUrl').value='';
     el('issueQrMessage').textContent='QR-code kon niet worden geladen: '+error.message;
   }
 }
