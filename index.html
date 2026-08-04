@@ -81,6 +81,10 @@
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>
         <span class="navLabel">Meldingen</span>
       </button>
+      <button class="nav" data-page="datacontrole" data-title="Datacontrole">
+        <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><path d="M9 17l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg></span>
+        <span class="navLabel">Datacontrole</span>
+      </button>
       <button class="nav settingsNav" data-page="instellingen" data-title="Instellingen">
         <span class="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 2l.06.06-2.12 2.12-.06-.06a1.8 1.8 0 0 0-2-.36 1.8 1.8 0 0 0-1.1 1.65V20.5h-3v-.09a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-2 .36l-.06.06-2.12-2.12.06-.06a1.8 1.8 0 0 0 .36-2A1.8 1.8 0 0 0 5 13.9H4.5v-3H5a1.8 1.8 0 0 0 1.65-1.1 1.8 1.8 0 0 0-.36-2l-.06-.06 2.12-2.12.06.06a1.8 1.8 0 0 0 2 .36A1.8 1.8 0 0 0 11.5 4.4V4.5h3v-.09a1.8 1.8 0 0 0 1.1 1.65 1.8 1.8 0 0 0 2-.36l.06-.06 2.12 2.12-.06.06a1.8 1.8 0 0 0-.36 2A1.8 1.8 0 0 0 21 10.9h.5v3H21a1.8 1.8 0 0 0-1.6 1.1Z"/></svg></span>
         <span class="navLabel">Instellingen</span>
@@ -118,6 +122,7 @@
           <div class="card"><span>Onderhoud &lt; 90 dagen</span><strong id="maintenanceSoon">-</strong></div>
           <div class="card"><span>Energielabel &lt; 180 dagen</span><strong id="energySoon">-</strong></div>
           <div class="card"><span>Leegstand / geen huurder</span><strong id="vacancyCount">-</strong></div>
+          <div class="card"><span>Objecten niet compleet</span><strong id="dataCheckIssuesCount">-</strong></div>
         </div>
         <div class="dashboardInsights">
           <div class="panel">
@@ -275,6 +280,22 @@
       <section id="meldingen" class="page">
         <div id="notificationFilters"></div>
         <div id="notificationList" class="alertList"></div>
+      </section>
+
+      <section id="datacontrole" class="page">
+        <div class="panel dataCheckIntro">
+          <div>
+            <h2>Automatische object-datacontrole</h2>
+            <p>Het dashboard controleert automatisch de belangrijkste object-, contract-, huurder- en energielabelgegevens. Velden die niet van toepassing zijn, zoals een energielabel dat niet verplicht is, worden niet als ontbrekend gezien.</p>
+          </div>
+        </div>
+        <div id="dataCheckSummary" class="cards dataCheckSummaryCards"></div>
+        <div id="dataCheckFilters"></div>
+        <div class="panel dataCheckTablePanel">
+          <div class="dataCheckTableWrap">
+            <table id="dataCheckTable"></table>
+          </div>
+        </div>
       </section>
 
       <section id="instellingen" class="page">

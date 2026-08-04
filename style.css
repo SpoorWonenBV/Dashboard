@@ -1472,3 +1472,92 @@ body{min-height:100%;padding-top:env(safe-area-inset-top);padding-right:env(safe
   .rentPropertyTabs{width:100%}
   .rentPropertyTab{flex:1;justify-content:center;padding:10px 8px}
 }
+
+
+/* v40.35: automatische object-datacontrole */
+.dataCheckIntro{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  align-items:flex-start;
+}
+.dataCheckIntro h2{margin:0 0 7px}
+.dataCheckIntro p{
+  margin:0;
+  max-width:920px;
+  color:#64748b;
+  line-height:1.55;
+}
+.dataCheckSummaryCards{
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+}
+.dataCheckFilterBar{
+  grid-template-columns:minmax(220px,320px);
+}
+.dataCheckTablePanel{padding:0;overflow:hidden}
+.dataCheckTableWrap{
+  width:100%;
+  overflow-x:auto;
+}
+#dataCheckTable{min-width:980px}
+#dataCheckTable td{vertical-align:top}
+#dataCheckTable th:nth-child(1){min-width:190px}
+#dataCheckTable th:nth-child(2){min-width:150px}
+#dataCheckTable th:nth-child(4){min-width:330px}
+.dataCheckProgress{
+  width:120px;
+  height:10px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#e2e8f0;
+  margin:4px 0 7px;
+}
+.dataCheckProgress span{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,#94a3b8,#172033);
+}
+.dataCheckScore{
+  font-size:13px;
+  color:#475569;
+}
+.dataCheckIssueList{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.dataCheckIssue{
+  display:inline-flex;
+  align-items:center;
+  padding:5px 8px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+}
+.dataCheckIssue.danger{
+  background:#fee2e2;
+  color:#991b1b;
+}
+.dataCheckIssue.warning{
+  background:#fef3c7;
+  color:#92400e;
+}
+.dataCheckCompleteText{
+  color:#166534;
+  font-weight:700;
+  font-size:13px;
+}
+.dataCheckActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.dataCheckActions .miniLink{margin-top:0}
+@media(max-width:700px){
+  .dataCheckIntro{display:block}
+  .dataCheckSummaryCards{grid-template-columns:1fr 1fr}
+}
+@media(max-width:520px){
+  .dataCheckSummaryCards{grid-template-columns:1fr}
+}

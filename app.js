@@ -1,7 +1,7 @@
 const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
-let sb, query = '', notificationTypeFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
+let sb, query = '', notificationTypeFilter = '', dataCheckStatusFilter = 'incomplete', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], selectedPropertyId = null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -2563,6 +2563,222 @@ function notificationItems(data){
   const score={danger:0,warning:1,ok:2};
   return items.sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9));
 }
+function usefulDataValue(value){
+  const text=clean(value);
+  return Boolean(text&&text!=='-'&&text.toLowerCase()!=='onbekend');
+}
+
+function hasPropertyDocumentType(r,terms){
+  return (r.documenten||[]).some(document=>{
+    const haystack=norm(`${document.document_type||''} ${document.name||''}`);
+    return terms.some(term=>haystack.includes(norm(term)));
+  });
+}
+
+function propertyDataCheck(r){
+  const checks=[];
+  const add=(key,label,ok,{weight=2,severity='danger',group='Objectgegevens',detail=''}={})=>{
+    checks.push({key,label,ok:Boolean(ok),weight,severity,group,detail});
+  };
+
+  const property=r.property||{};
+  const contract=r.contract||{};
+  const timeline=r.contract_timeline||contractTimeline(contract);
+  const statusText=norm(r.status);
+  const exemptFromTenancy=['leeg','inactief','verkocht','ontwikkeling'].some(term=>statusText.includes(term));
+  const hasContract=Boolean(contract.id);
+  const hasTenant=usefulDataValue(r.huurder);
+  const tenancyExpected=hasContract||!exemptFromTenancy;
+  const activeContract=hasContract&&!timeline.terminated;
+
+  add('name','Objectnaam',usefulDataValue(property.name),{group:'Objectgegevens'});
+  add('address','Straatnaam',usefulDataValue(r.straatnaam),{group:'Objectgegevens'});
+  add('house_number','Huisnummer',usefulDataValue(r.huisnummer),{group:'Objectgegevens'});
+  add('postal_code','Postcode',usefulDataValue(r.postcode),{group:'Objectgegevens'});
+  add('city','Plaats',usefulDataValue(r.stad),{group:'Objectgegevens'});
+  add('property_type','Type pand',usefulDataValue(r.type),{group:'Objectgegevens'});
+  add('status','Objectstatus',usefulDataValue(r.status),{group:'Objectgegevens'});
+
+  if(tenancyExpected){
+    add('contract','Actief contract gekoppeld',hasContract,{
+      group:'Contract',
+      detail:'Zet het object op Leegstand of Inactief wanneer er bewust geen contract is.'
+    });
+    add('tenant','Huurder gekoppeld',hasTenant,{group:'Huurder'});
+
+    if(hasTenant){
+      add('tenant_contact','E-mail of telefoon huurder',usefulDataValue(r.email)||usefulDataValue(r.telefoon),{
+        weight:1,
+        severity:'warning',
+        group:'Huurder'
+      });
+    }
+  }
+
+  if(hasContract){
+    add('contract_start','Startdatum contract',usefulDataValue(r.startdatum_contract),{group:'Contract'});
+    add('notice_period','Opzegtermijn contract',Number(timeline.noticeMonths)>0,{
+      group:'Contract',
+      detail:'Vul de contractuele opzegtermijn in maanden in.'
+    });
+    add('contract_document','Huurcontractdocument',hasPropertyDocumentType(r,['huurcontract','huurovereenkomst']),{
+      weight:1,
+      severity:'warning',
+      group:'Documenten'
+    });
+  }
+
+  if(activeContract){
+    add('monthly_rent','Maandhuur',Number(r.huur_pm)>0,{group:'Financieel'});
+    add('yearly_rent','Jaarhuur',Number(r.huur_pj)>0,{group:'Financieel'});
+    add('rent_increase_month','Maand huurverhoging',usefulDataValue(r.maand_huurverhoging),{
+      weight:1,
+      severity:'warning',
+      group:'Financieel'
+    });
+
+    if(Number(r.huur_pm)>0&&Number(r.huur_pj)>0){
+      const expected=Number(r.huur_pm)*12;
+      add('yearly_rent_match','Jaarhuur sluit aan op maandhuur',Math.abs(Number(r.huur_pj)-expected)<0.02,{
+        weight:1,
+        severity:'warning',
+        group:'Financieel',
+        detail:`Verwachte jaarhuur: ${euro2(expected)}.`
+      });
+    }
+  }
+
+  if(r.energielabel_verplicht){
+    add('energy_label','Energielabel',usefulDataValue(r.energielabel),{
+      group:'Energie',
+      detail:'Dit object staat ingesteld als energielabelplichtig.'
+    });
+    add('energy_label_date','Geldigheidsdatum energielabel',usefulDataValue(r.energielabel_geldig_tot),{
+      group:'Energie',
+      detail:'Dit object staat ingesteld als energielabelplichtig.'
+    });
+  }
+
+  add('purchase_value','Aankoopwaarde',Number(r.aankoopwaarde)>0,{
+    weight:1,
+    severity:'warning',
+    group:'Aanbevolen'
+  });
+  add('woz_value','WOZ-waarde',Number(r.woz_waarde)>0,{
+    weight:1,
+    severity:'warning',
+    group:'Aanbevolen'
+  });
+  add('photo','Objectfoto',usefulDataValue(r.foto_url),{
+    weight:1,
+    severity:'warning',
+    group:'Aanbevolen'
+  });
+
+  const totalWeight=checks.reduce((sum,check)=>sum+check.weight,0);
+  const passedWeight=checks.filter(check=>check.ok).reduce((sum,check)=>sum+check.weight,0);
+  const score=totalWeight?Math.round((passedWeight/totalWeight)*100):100;
+  const issues=checks.filter(check=>!check.ok);
+  const criticalCount=issues.filter(issue=>issue.severity==='danger').length;
+
+  let status='Compleet';
+  let tone='ok';
+  if(criticalCount>0||score<80){
+    status='Onvoldoende';
+    tone='danger';
+  }else if(issues.length){
+    status='Aandacht';
+    tone='warning';
+  }
+
+  return {r,checks,issues,score,status,tone,criticalCount};
+}
+
+function dataCheckReports(data){
+  return data
+    .map(propertyDataCheck)
+    .sort((a,b)=>
+      a.score-b.score ||
+      b.criticalCount-a.criticalCount ||
+      compareObjectAddress(a.r,b.r)
+    );
+}
+
+function renderDataCheck(data){
+  const summary=el('dataCheckSummary');
+  const filters=el('dataCheckFilters');
+  const table=el('dataCheckTable');
+  if(!summary||!filters||!table) return;
+
+  const reports=dataCheckReports(data);
+  const complete=reports.filter(report=>report.status==='Compleet').length;
+  const attention=reports.filter(report=>report.status==='Aandacht').length;
+  const insufficient=reports.filter(report=>report.status==='Onvoldoende').length;
+  const totalIssues=reports.reduce((sum,report)=>sum+report.issues.length,0);
+
+  summary.innerHTML=`
+    <div class="card"><span>Gecontroleerde objecten</span><strong>${reports.length}</strong></div>
+    <div class="card"><span>Compleet</span><strong>${complete}</strong></div>
+    <div class="card"><span>Aandacht</span><strong>${attention}</strong></div>
+    <div class="card"><span>Onvoldoende</span><strong>${insufficient}</strong></div>
+    <div class="card"><span>Ontbrekende datapunten</span><strong>${totalIssues}</strong></div>
+  `;
+
+  filters.innerHTML=`<div class="maintenanceFilters dataCheckFilterBar">
+    <label>Status
+      <select id="dataCheckStatusFilter">
+        <option value="incomplete" ${dataCheckStatusFilter==='incomplete'?'selected':''}>Niet compleet (${attention+insufficient})</option>
+        <option value="" ${dataCheckStatusFilter===''?'selected':''}>Alle objecten (${reports.length})</option>
+        <option value="danger" ${dataCheckStatusFilter==='danger'?'selected':''}>Onvoldoende (${insufficient})</option>
+        <option value="warning" ${dataCheckStatusFilter==='warning'?'selected':''}>Aandacht (${attention})</option>
+        <option value="ok" ${dataCheckStatusFilter==='ok'?'selected':''}>Compleet (${complete})</option>
+      </select>
+    </label>
+  </div>`;
+
+  const visible=reports.filter(report=>{
+    if(dataCheckStatusFilter==='incomplete') return report.status!=='Compleet';
+    if(!dataCheckStatusFilter) return true;
+    return report.tone===dataCheckStatusFilter;
+  });
+
+  table.innerHTML=`<tr>
+    <th>Object</th>
+    <th>Volledigheid</th>
+    <th>Status</th>
+    <th>Ontbrekend / controleren</th>
+    <th>Actie</th>
+  </tr>`+visible.map(report=>{
+    const issueHtml=report.issues.length
+      ? `<div class="dataCheckIssueList">${report.issues.map(issue=>`
+          <span class="dataCheckIssue ${issue.severity}" title="${escAttr(issue.detail||issue.group)}">
+            ${escHtml(issue.label)}
+          </span>`).join('')}</div>`
+      : '<span class="dataCheckCompleteText">Alle gecontroleerde gegevens zijn aanwezig.</span>';
+
+    return `<tr>
+      <td>
+        <strong>${escHtml(report.r.object)}</strong>
+        <span class="subtle">${escHtml([report.r.straatnaam,report.r.huisnummer,report.r.postcode,report.r.stad].filter(Boolean).join(' '))}</span>
+      </td>
+      <td>
+        <div class="dataCheckProgress" aria-label="${report.score}% compleet">
+          <span style="width:${report.score}%"></span>
+        </div>
+        <strong class="dataCheckScore">${report.score}%</strong>
+      </td>
+      <td>${statusBadge([report.status,report.tone])}</td>
+      <td>${issueHtml}</td>
+      <td>
+        <div class="dataCheckActions">
+          <button class="miniLink detailBtn" data-id="${report.r.id}">Open object</button>
+          <button class="miniLink editBtn" data-id="${report.r.id}">Bewerken</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5">Geen objecten gevonden binnen dit filter.</td></tr>';
+}
+
 function renderNotificationFilters(items){
   const target=el('notificationFilters');
   if(!target) return;
@@ -4478,6 +4694,7 @@ function setupContractStickyHeader(){
 
 function render(){
   const data=filtered(), notes=notificationItems(data);
+  renderDataCheck(data);
   renderNotificationFilters(notes);
   const visibleNotifications=filteredNotificationItems(notes);
   const objectPageData=filteredObjectsForPage(data);
@@ -4491,6 +4708,7 @@ function render(){
   if(el('maintenanceSoon')) el('maintenanceSoon').textContent=data.filter(r=>{const d=daysUntil(r.scope_inspectie_geldig_tot); return d!==null && d<=90;}).length;
   if(el('energySoon')) el('energySoon').textContent=data.filter(r=>{const d=daysUntil(r.energielabel_geldig_tot); return r.energielabel_verplicht&&d!==null&&d<=180;}).length;
   if(el('vacancyCount')) el('vacancyCount').textContent=data.filter(r=>String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-').length;
+  if(el('dataCheckIssuesCount')) el('dataCheckIssuesCount').textContent=dataCheckReports(data).filter(report=>report.status!=='Compleet').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard">${photoBox(r.foto_url,'objectPhoto',`Foto van ${r.object}`)}<h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
@@ -4846,6 +5064,7 @@ function init(){
   el('search').addEventListener('input', e=>{ query=e.target.value; render(); });
   document.body.addEventListener('change', e=>{
     if(e.target.id==='notificationTypeFilter'){ notificationTypeFilter=e.target.value; render(); }
+    if(e.target.id==='dataCheckStatusFilter'){ dataCheckStatusFilter=e.target.value; render(); }
     if(e.target.id==='objectCityFilter'){ objectCityFilter=e.target.value; render(); }
     if(e.target.id==='objectTypeFilter'){ objectTypeFilter=e.target.value; render(); }
     if(e.target.id==='objectStatusFilter'){ objectStatusFilter=e.target.value; render(); }
