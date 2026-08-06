@@ -1,10 +1,9 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v40-43';
+const CACHE_NAME='vastgoed-dashboard-static-v40-42-1';
 const OFFLINE_URL='/offline.html';
 const STATIC_PATHS=new Set([
   '/style.css',
-  '/modal-types-v40-43.css',
   '/app.js',
   '/qr-code.js',
   '/melding.css',

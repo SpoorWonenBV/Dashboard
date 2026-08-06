@@ -2,6 +2,7 @@ const SUPABASE_URL = 'https://oplujvnyutmxfpdewezb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
 let sb, query = '', notificationTypeFilter = '', taskStatusFilter = 'open', taskPriorityFilter = '', taskObjectFilter = '', taskDateFilter = '', tenantReportStatusFilter = 'open', tenantReportUrgencyFilter = '', tenantReportObjectFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawTasks = [], tasksReady = true, rawIssuePortals = [], issuePortalsReady = true, rawTenantIssueReports = [], tenantIssueReportsReady = true, activeIssueQrPropertyId = null, rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
+let activeTenantReportId=null;
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -51,96 +52,6 @@ const safeFileName = name => String(name || 'bestand').replace(/[^a-zA-Z0-9._-]/
 const isExternalUrl = value => /^https?:\/\//i.test(String(value || ''));
 const escAttr = value => String(value || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const escHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-
-
-/* v40.43: herkenbare pop-ups per onderdeel */
-let activeTenantReportModalId=null;
-
-function ensureTypedModalStylesheet(){
-  if(document.getElementById('typedModalStylesV4043')) return;
-  const link=document.createElement('link');
-  link.id='typedModalStylesV4043';
-  link.rel='stylesheet';
-  link.href='/modal-types-v40-43.css';
-  document.head.appendChild(link);
-}
-
-function decorateModal(modalId,type,label,icon){
-  const modal=el(modalId);
-  if(!modal) return;
-  modal.classList.add('typedModal',`typedModal-${type}`);
-  const titleGroup=modal.querySelector('.modalHeader > div');
-  if(!titleGroup||titleGroup.querySelector('.modalTypePill')) return;
-  const pill=document.createElement('span');
-  pill.className='modalTypePill';
-  const pillIcon=document.createElement('span');
-  pillIcon.className='modalTypePillIcon';
-  pillIcon.textContent=icon;
-  const pillLabel=document.createElement('span');
-  pillLabel.textContent=label;
-  pill.append(pillIcon,pillLabel);
-  titleGroup.prepend(pill);
-}
-
-function ensureTenantReportModal(){
-  let modal=el('tenantReportModal');
-  if(modal) return modal;
-  modal=document.createElement('div');
-  modal.id='tenantReportModal';
-  modal.className='modal hidden typedModal typedModal-tenant';
-  modal.setAttribute('role','dialog');
-  modal.setAttribute('aria-modal','true');
-  modal.setAttribute('aria-labelledby','tenantReportModalTitle');
-  modal.innerHTML=`
-    <div class="modalCard largeModal tenantReportModalCard">
-      <div class="modalHeader">
-        <div>
-          <span class="modalTypePill"><span class="modalTypePillIcon">!</span><span>Huurdersmelding</span></span>
-          <h2 id="tenantReportModalTitle">Melding bekijken</h2>
-          <p id="tenantReportModalMeta" class="meta"></p>
-        </div>
-        <button id="closeTenantReportModalBtn" class="iconBtn" type="button" aria-label="Huurdersmelding sluiten">×</button>
-      </div>
-      <div class="tenantReportViewerBody">
-        <div class="tenantReportViewerSummary">
-          <div><span>Status</span><strong id="tenantReportModalStatus">-</strong></div>
-          <div><span>Urgentie</span><strong id="tenantReportModalUrgency">-</strong></div>
-          <div><span>Melder</span><strong id="tenantReportModalReporter">-</strong></div>
-          <div><span>Contact</span><strong id="tenantReportModalContact">-</strong></div>
-        </div>
-        <div id="tenantReportModalDescription" class="tenantReportViewerDescription"></div>
-        <div id="tenantReportModalPhotoState" class="tenantReportViewerState">Foto wordt veilig geladen…</div>
-        <img id="tenantReportModalPhoto" class="tenantReportViewerPhoto hidden" alt="Foto bij de huurdersmelding">
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  el('closeTenantReportModalBtn')?.addEventListener('click',closeTenantReportModal);
-  modal.addEventListener('click',event=>{if(event.target===modal) closeTenantReportModal();});
-  return modal;
-}
-
-function closeTenantReportModal(){
-  const modal=el('tenantReportModal');
-  modal?.classList.add('hidden');
-  const image=el('tenantReportModalPhoto');
-  if(image){image.removeAttribute('src');image.classList.add('hidden');}
-  activeTenantReportModalId=null;
-}
-
-function initializeTypedModals(){
-  ensureTypedModalStylesheet();
-  decorateModal('rentIncreaseModal','rent','Huurverhoging','€');
-  decorateModal('serviceCostModal','service','Servicekosten','€');
-  decorateModal('issueQrModal','tenant','Huurdersmelding · QR','!');
-  decorateModal('taskModal','task','Taak','✓');
-  decorateModal('maintenanceEditModal','maintenance','Onderhoud','!');
-  decorateModal('inspectionModal','inspection','Inspectie','i');
-  decorateModal('propertyModal','object','Object','O');
-  ensureTenantReportModal();
-  document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'&&!el('tenantReportModal')?.classList.contains('hidden')) closeTenantReportModal();
-  });
-}
 
 
 /* v39: strengere sessiebeveiliging */
@@ -428,7 +339,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=40.43',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=38.4',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -2744,7 +2655,7 @@ function contractTimeline(contract={}){
 const monthMap={januari:0,februari:1,maart:2,april:3,mei:4,juni:5,juli:6,augustus:7,september:8,oktober:9,november:10,december:11};
 function daysUntilRentIncrease(monthName){ if(!monthName) return null; const key=String(monthName).trim().toLowerCase(); if(!(key in monthMap)) return null; const today=new Date(); today.setHours(0,0,0,0); let target=new Date(today.getFullYear(), monthMap[key], 1); if(target<today) target=new Date(today.getFullYear()+1, monthMap[key], 1); return Math.ceil((target-today)/(1000*60*60*24)); }
 function rentIncreaseStatus(monthName){ const days=daysUntilRentIncrease(monthName); if(days===null) return ['Niet ingesteld','warning']; if(days<=30) return ['Deze maand/komende 30 dagen','danger']; if(days<=60) return ['Binnen 60 dagen','warning']; return ['Op orde','ok']; }
-function actionItem(sev,type,title,text,objectId,taskId){ return {sev,type,title,text,objectId,taskId}; }
+function actionItem(sev,type,title,text,objectId,taskId,reportId){ return {sev,type,title,text,objectId,taskId,reportId}; }
 const SIDEBAR_STORAGE_KEY='vastgoedSidebarCollapsed';
 function setSidebarCollapsed(collapsed,{persist=true}={}){
   const sidebar=document.querySelector('.sidebar');
@@ -3100,11 +3011,13 @@ function notificationItems(data){
       const property=tenantReportProperty(report);
       const objectText=property?` · ${property.object}`:'';
       items.push(actionItem(
-        report.urgency==='Spoed'?'danger':'warning',
+        report.urgency==='Spoed'?'danger':report.urgency==='Hoog'?'warning':'ok',
         'Huurdersmelding',
         `${report.category}${objectText}`,
-        `${report.description.slice(0,180)}${report.description.length>180?'…':''}`,
-        property?.id||null
+        `${report.status} · ${report.description.slice(0,180)}${report.description.length>180?'…':''}`,
+        property?.id||null,
+        null,
+        report.id
       ));
     });
 
@@ -3856,7 +3769,34 @@ function filteredNotificationItems(items){
   return items.filter(item=>item.type===notificationTypeFilter);
 }
 
-function actionHtml(n){ return `<div class="alert ${n.sev}"><strong><span class="typeTag">${n.type}</span> ${n.title}</strong><span>${n.text}</span>${n.objectId?`<button class="miniLink detailBtn" data-id="${n.objectId}">Bekijk object</button>`:''}${n.taskId?`<button class="miniLink taskEditBtn" data-task-id="${n.taskId}">Bekijk taak</button>`:''}</div>`; }
+function notificationVisual(n){
+  if(n.reportId) return {kind:'tenant',label:'Huurdersmelding',icon:'👤'};
+  if(n.type==='Huurverhoging') return {kind:'rent',label:'Automatische huurmelding',icon:'€'};
+  if(n.type==='Taak') return {kind:'task',label:'Taakmelding',icon:'✓'};
+  if(n.type==='Onderhoud'||n.type==='Keuring'||n.type==='Energielabel') return {kind:'maintenance',label:'Automatische beheermelding',icon:'⚙'};
+  return {kind:'automatic',label:'Automatische melding',icon:'!'};
+}
+function actionHtml(n){
+  const visual=notificationVisual(n);
+  const report=n.reportId?rawTenantIssueReports.find(item=>item.id===n.reportId):null;
+  const tenantOpen=report&&tenantReportIsOpen(report);
+  const actions=[];
+  if(n.reportId){
+    actions.push(`<button class="notificationAction notificationPrimary tenantReportOpenBtn" data-report-id="${escAttr(n.reportId)}">Melding bekijken</button>`);
+    if(tenantOpen) actions.push(`<button class="notificationAction tenantReportCompleteBtn" data-report-id="${escAttr(n.reportId)}">Afronden</button>`);
+  }else if(n.type==='Huurverhoging'&&n.objectId){
+    actions.push(`<button class="notificationAction notificationPrimary rentEditBtn" data-id="${escAttr(n.objectId)}">Huurverhoging openen</button>`);
+  }else if(n.objectId){
+    actions.push(`<button class="notificationAction detailBtn" data-id="${escAttr(n.objectId)}">Bekijk object</button>`);
+  }
+  if(n.taskId) actions.push(`<button class="notificationAction taskEditBtn" data-task-id="${escAttr(n.taskId)}">Bekijk taak</button>`);
+  return `<div class="alert ${n.sev} notificationCard notificationCard--${visual.kind}">
+    <div class="notificationCardHeader"><span class="notificationIcon" aria-hidden="true">${visual.icon}</span><span class="notificationSource">${visual.label}</span><span class="typeTag">${escHtml(n.type)}</span></div>
+    <strong class="notificationTitle">${escHtml(n.title)}</strong>
+    <span class="notificationText">${escHtml(n.text)}</span>
+    ${actions.length?`<div class="notificationActions">${actions.join('')}</div>`:''}
+  </div>`;
+}
 function isVacant(r){ return String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-'; }
 function contractBucket(r){ if(r.contract_opgezegd) return 'Opgezegd'; if(r.contract_onbepaalde) return 'Onbepaalde tijd'; if(r.aantal_verlengingen>0) return 'Verlengd'; const d=daysUntil(r.opzegdatum); if(d===null) return 'Geen opzegdatum'; if(d<0) return 'Opzegmoment verlopen'; if(d<=90) return '0-3 mnd'; if(d<=180) return '3-6 mnd'; if(d<=365) return '6-12 mnd'; return '>12 mnd'; }
 function chartBar(label,value,total){ const width=total>0 ? Math.round((value/total)*100) : 0; return `<div class="chartRow"><div class="chartLabel"><span>${label}</span><strong>${value}</strong></div><div class="bar"><span style="width:${width}%"></span></div></div>`; }
@@ -4081,59 +4021,24 @@ function tenantReportTone(report){
   return report.status==='Nieuw'?'warning':'neutral';
 }
 
-async function openTenantReportPhoto(reportId){
-  const report=rawTenantIssueReports.find(item=>String(item.id)===String(reportId));
-  if(!report){
-    alert('Deze huurdersmelding kon niet worden gevonden.');
+async function openTenantReportPhoto(path){
+  const cleanPath=clean(path);
+  if(!cleanPath){
+    alert('Bij deze melding is geen foto opgeslagen.');
     return;
   }
-
-  const modal=ensureTenantReportModal();
-  const property=tenantReportProperty(report);
-  activeTenantReportModalId=report.id;
-  el('tenantReportModalTitle').textContent=report.category||'Huurdersmelding';
-  el('tenantReportModalMeta').textContent=[
-    property?.object,
-    report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'' ,
-    `Referentie ${String(report.id).slice(0,8).toUpperCase()}`
-  ].filter(Boolean).join(' · ');
-  el('tenantReportModalStatus').textContent=report.status||'-';
-  el('tenantReportModalUrgency').textContent=report.urgency||'-';
-  el('tenantReportModalReporter').textContent=report.reporter_name||'-';
-  el('tenantReportModalContact').textContent=[report.phone,report.email,report.availability?`Bereikbaar: ${report.availability}`:''].filter(Boolean).join(' · ')||'-';
-  el('tenantReportModalDescription').textContent=report.description||'Geen omschrijving opgeslagen.';
-
-  const image=el('tenantReportModalPhoto');
-  const state=el('tenantReportModalPhotoState');
-  image.removeAttribute('src');
-  image.classList.add('hidden');
-  state.classList.remove('hidden');
-  state.textContent=report.photo_path?'Foto wordt veilig geladen…':'Bij deze melding is geen foto opgeslagen.';
-  modal.classList.remove('hidden');
-
-  if(!clean(report.photo_path)) return;
 
   const result=await sb
     .storage
     .from('tenant-issue-photos')
-    .createSignedUrl(clean(report.photo_path),300);
+    .createSignedUrl(cleanPath,300);
 
-  if(activeTenantReportModalId!==report.id) return;
   if(result.error||!result.data?.signedUrl){
-    state.textContent='De foto kon niet worden geopend: '+(result.error?.message||'onbekende fout');
+    alert('De foto kon niet worden geopend: '+(result.error?.message||'onbekende fout'));
     return;
   }
 
-  image.onload=()=>{
-    if(activeTenantReportModalId!==report.id) return;
-    state.classList.add('hidden');
-    image.classList.remove('hidden');
-  };
-  image.onerror=()=>{
-    state.textContent='De foto kon niet in het dashboard worden weergegeven.';
-    image.classList.add('hidden');
-  };
-  image.src=result.data.signedUrl;
+  window.open(result.data.signedUrl,'_blank','noopener,noreferrer');
 }
 
 function tenantReportContact(report){
@@ -4143,6 +4048,143 @@ function tenantReportContact(report){
     report.email,
     report.availability?`Bereikbaar: ${report.availability}`:''
   ].filter(Boolean).join(' · ')||'Geen contactgegevens opgegeven';
+}
+
+
+function ensureTenantReportUi(){
+  if(!document.getElementById('tenantReportUiStyles')){
+    const style=document.createElement('style');
+    style.id='tenantReportUiStyles';
+    style.textContent=`
+      .notificationCard{display:flex;flex-direction:column;gap:8px;border-left:6px solid #64748b;background:#fff}
+      .alert.notificationCard--tenant{border-left-color:#2563eb!important;background:linear-gradient(90deg,#eff6ff 0,#fff 44%)!important}
+      .alert.notificationCard--rent{border-left-color:#ea580c!important;background:linear-gradient(90deg,#fff7ed 0,#fff 44%)!important}
+      .alert.notificationCard--maintenance{border-left-color:#dc2626!important;background:linear-gradient(90deg,#fef2f2 0,#fff 44%)!important}
+      .alert.notificationCard--task{border-left-color:#7c3aed!important;background:linear-gradient(90deg,#f5f3ff 0,#fff 44%)!important}
+      .notificationCardHeader{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .notificationIcon{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:999px;background:#e2e8f0;font-weight:800}
+      .notificationCard--tenant .notificationIcon{background:#dbeafe;color:#1d4ed8}
+      .notificationCard--rent .notificationIcon{background:#ffedd5;color:#c2410c}
+      .notificationSource{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#334155}
+      .notificationTitle{font-size:15px}
+      .notificationText{line-height:1.45}
+      .notificationActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+      .notificationAction{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+      .notificationAction:hover{background:#f8fafc}
+      .notificationPrimary{background:#0f172a;color:#fff;border-color:#0f172a}
+      .notificationCard--tenant .notificationPrimary{background:#2563eb;border-color:#2563eb}
+      .notificationCard--rent .notificationPrimary{background:#ea580c;border-color:#ea580c}
+      #rentIncreaseModal>div,#rentIncreaseModal .modalCard,#rentIncreaseModal .modalContent{border-top:8px solid #ea580c!important}
+      #rentIncreaseModal h2,#rentIncreaseModal h3{color:#c2410c}
+      .tenantReportModalLayer{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.58)}
+      .tenantReportModalLayer.hidden{display:none}
+      .tenantReportModalCard{width:min(720px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.32);border-top:8px solid #2563eb}
+      .tenantReportModalHeader{display:flex;justify-content:space-between;gap:16px;padding:20px 22px 16px;background:#eff6ff;border-bottom:1px solid #bfdbfe}
+      .tenantReportModalHeader h2{margin:4px 0 0;font-size:22px}
+      .tenantReportModalEyebrow{margin:0;color:#1d4ed8;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+      .tenantReportModalClose{border:0;background:#fff;width:36px;height:36px;border-radius:999px;font-size:22px;cursor:pointer}
+      .tenantReportModalBody{padding:20px 22px;display:grid;gap:16px}
+      .tenantReportSummary{display:flex;gap:8px;flex-wrap:wrap}
+      .tenantReportChip{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;background:#e2e8f0;color:#334155}
+      .tenantReportChip--urgent{background:#fee2e2;color:#b91c1c}.tenantReportChip--high{background:#ffedd5;color:#c2410c}.tenantReportChip--normal{background:#dcfce7;color:#166534}
+      .tenantReportInfoGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      .tenantReportInfo{padding:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.tenantReportInfo span{display:block;font-size:12px;color:#64748b;margin-bottom:4px}.tenantReportInfo strong{display:block;word-break:break-word}
+      .tenantReportDescriptionBox{white-space:pre-wrap;line-height:1.55;padding:14px;border-left:4px solid #2563eb;background:#f8fafc;border-radius:8px}
+      .tenantReportModalActions{display:flex;gap:10px;flex-wrap:wrap;padding:16px 22px 22px;border-top:1px solid #e2e8f0}
+      .tenantReportModalActions button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:9px 12px;font:inherit;font-weight:800;cursor:pointer}
+      .tenantReportModalActions .primary{background:#2563eb;color:#fff;border-color:#2563eb}.tenantReportModalActions .complete{background:#15803d;color:#fff;border-color:#15803d}
+      .tenantReportRowActions{display:flex;gap:6px;flex-wrap:wrap}.tenantReportRowActions .miniLink{white-space:nowrap}
+      .tenantReportDetailActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+      @media(max-width:620px){.tenantReportInfoGrid{grid-template-columns:1fr}.tenantReportModalLayer{padding:8px}.tenantReportModalCard{max-height:96vh;border-radius:12px}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  if(document.getElementById('tenantReportModal')) return;
+  const modal=document.createElement('div');
+  modal.id='tenantReportModal';
+  modal.className='tenantReportModalLayer hidden';
+  modal.setAttribute('role','dialog');
+  modal.setAttribute('aria-modal','true');
+  modal.setAttribute('aria-labelledby','tenantReportModalTitle');
+  modal.innerHTML=`<section class="tenantReportModalCard">
+    <header class="tenantReportModalHeader"><div><p class="tenantReportModalEyebrow">Huurdersmelding</p><h2 id="tenantReportModalTitle">Melding bekijken</h2></div><button type="button" class="tenantReportModalClose" aria-label="Sluiten">×</button></header>
+    <div id="tenantReportModalBody" class="tenantReportModalBody"></div>
+    <footer id="tenantReportModalActions" class="tenantReportModalActions"></footer>
+  </section>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click',event=>{
+    if(event.target===modal||event.target.closest('.tenantReportModalClose')) closeTenantReportModal();
+  });
+}
+
+function tenantReportUrgencyClass(urgency){
+  if(urgency==='Spoed') return 'tenantReportChip--urgent';
+  if(urgency==='Hoog') return 'tenantReportChip--high';
+  return 'tenantReportChip--normal';
+}
+
+function openTenantReportModal(reportId){
+  ensureTenantReportUi();
+  const report=rawTenantIssueReports.find(item=>item.id===reportId);
+  if(!report){ alert('Deze huurdersmelding is niet meer beschikbaar.'); return; }
+  activeTenantReportId=report.id;
+  const property=tenantReportProperty(report);
+  const received=report.submitted_at?new Date(report.submitted_at).toLocaleString('nl-NL'):'-';
+  const reference=String(report.id).slice(0,8).toUpperCase();
+  const body=el('tenantReportModalBody');
+  body.innerHTML=`
+    <div class="tenantReportSummary"><span class="tenantReportChip ${tenantReportUrgencyClass(report.urgency)}">${escHtml(report.urgency||'Normaal')}</span><span class="tenantReportChip">Status: ${escHtml(report.status||'Nieuw')}</span><span class="tenantReportChip">Ref. ${escHtml(reference)}</span></div>
+    <div class="tenantReportInfoGrid">
+      <div class="tenantReportInfo"><span>Object</span><strong>${escHtml(property?.object||'Object verwijderd')}</strong></div>
+      <div class="tenantReportInfo"><span>Ontvangen</span><strong>${escHtml(received)}</strong></div>
+      <div class="tenantReportInfo"><span>Melder</span><strong>${escHtml(report.reporter_name||'-')}</strong></div>
+      <div class="tenantReportInfo"><span>Bereikbaar</span><strong>${escHtml(report.availability||'-')}</strong></div>
+      <div class="tenantReportInfo"><span>Telefoon</span><strong>${escHtml(report.phone||'-')}</strong></div>
+      <div class="tenantReportInfo"><span>E-mail</span><strong>${escHtml(report.email||'-')}</strong></div>
+    </div>
+    <div><strong>${escHtml(report.category||'Melding')}</strong><div class="tenantReportDescriptionBox">${escHtml(report.description||'-')}</div></div>
+    ${report.photo_path?`<button type="button" class="notificationAction notificationPrimary tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:'<span class="subtle">Geen foto opgeslagen.</span>'}
+  `;
+  const actions=el('tenantReportModalActions');
+  const buttons=[];
+  if(property) buttons.push(`<button type="button" class="detailBtn" data-id="${escAttr(property.id)}">Object bekijken</button>`);
+  if(tenantReportIsOpen(report)&&report.status!=='In behandeling') buttons.push(`<button type="button" class="primary tenantReportStartBtn" data-report-id="${escAttr(report.id)}">In behandeling nemen</button>`);
+  if(tenantReportIsOpen(report)) buttons.push(`<button type="button" class="complete tenantReportCompleteBtn" data-report-id="${escAttr(report.id)}">Melding afronden</button>`);
+  if(report.status!=='Omgezet naar onderhoud'&&property) buttons.push(`<button type="button" class="convertTenantReportBtn" data-report-id="${escAttr(report.id)}">Naar onderhoud</button>`);
+  actions.innerHTML=buttons.join('')||'<span class="subtle">Deze melding is afgesloten.</span>';
+  el('tenantReportModalTitle').textContent=report.category||'Huurdersmelding';
+  el('tenantReportModal').classList.remove('hidden');
+}
+
+function closeTenantReportModal(){
+  el('tenantReportModal')?.classList.add('hidden');
+  activeTenantReportId=null;
+}
+
+async function setTenantReportStatus(reportId,status,{askConfirmation=false,closeAfter=false}={}){
+  const report=rawTenantIssueReports.find(item=>item.id===reportId);
+  if(!report) throw new Error('De huurdersmelding is niet meer beschikbaar.');
+  if(askConfirmation&&status==='Afgerond'&&!confirm(`Melding "${report.category}" afronden?`)) return false;
+  const result=await sb.from('tenant_issue_reports').update({status,updated_at:new Date().toISOString()}).eq('id',report.id).select('*').single();
+  if(result.error) throw result.error;
+  const index=rawTenantIssueReports.findIndex(item=>item.id===report.id);
+  rawTenantIssueReports[index]=result.data;
+  if(closeAfter) closeTenantReportModal();
+  render();
+  if(selectedPropertyId) renderDetail(selectedPropertyId);
+  if(activeTenantReportId===report.id&&!closeAfter) openTenantReportModal(report.id);
+  return true;
+}
+
+async function completeTenantReport(reportId){
+  try{ await setTenantReportStatus(reportId,'Afgerond',{askConfirmation:true,closeAfter:true}); }
+  catch(error){ console.error(error); alert('Melding afronden mislukt: '+error.message); }
+}
+
+async function startTenantReport(reportId){
+  try{ await setTenantReportStatus(reportId,'In behandeling'); }
+  catch(error){ console.error(error); alert('Status bijwerken mislukt: '+error.message); }
 }
 
 function filteredTenantReports(){
@@ -4231,7 +4273,7 @@ function renderTenantIssueReports(){
               <td>${escHtml(received)}<span class="subtle">Ref. ${escHtml(String(report.id).slice(0,8).toUpperCase())}</span></td>
               <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Object verwijderd</span>'}</td>
               <td><strong>${escHtml(report.category)}</strong><span class="tenantReportDescription">${escHtml(report.description)}</span></td>
-              <td>${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-report-id="${escAttr(report.id)}">Foto bekijken</button>`:'<span class="subtle">Geen foto</span>'}</td>
+              <td>${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:'<span class="subtle">Geen foto</span>'}</td>
               <td><span class="tenantReportContact">${escHtml(tenantReportContact(report))}</span></td>
               <td>${statusBadge([report.urgency,report.urgency==='Spoed'?'danger':report.urgency==='Hoog'?'warning':'ok'])}</td>
               <td>
@@ -4240,8 +4282,12 @@ function renderTenantIssueReports(){
                 </select>
               </td>
               <td>
-                ${report.status!=='Omgezet naar onderhoud'&&property?`<button class="miniLink convertTenantReportBtn" data-report-id="${report.id}">Naar onderhoud</button>`:''}
-                ${report.converted_maintenance_id?`<span class="subtle">Onderhoud gekoppeld</span>`:''}
+                <div class="tenantReportRowActions">
+                  <button class="miniLink tenantReportOpenBtn" data-report-id="${report.id}">Bekijken</button>
+                  ${tenantReportIsOpen(report)?`<button class="miniLink tenantReportCompleteBtn" data-report-id="${report.id}">Afronden</button>`:''}
+                  ${report.status!=='Omgezet naar onderhoud'&&property?`<button class="miniLink convertTenantReportBtn" data-report-id="${report.id}">Naar onderhoud</button>`:''}
+                  ${report.converted_maintenance_id?`<span class="subtle">Onderhoud gekoppeld</span>`:''}
+                </div>
               </td>
             </tr>`;
           }).join('')||'<tr><td colspan="8">Geen huurdersmeldingen binnen dit filter.</td></tr>'}
@@ -4254,26 +4300,16 @@ async function updateTenantReportStatus(select){
   const report=rawTenantIssueReports.find(item=>item.id===select.dataset.reportId);
   if(!report) return;
   const previous=report.status;
-  const status=select.value;
   select.disabled=true;
-
-  const result=await sb
-    .from('tenant_issue_reports')
-    .update({status,updated_at:new Date().toISOString()})
-    .eq('id',report.id)
-    .select('*')
-    .single();
-
-  select.disabled=false;
-  if(result.error){
+  try{
+    const changed=await setTenantReportStatus(report.id,select.value,{askConfirmation:select.value==='Afgerond'});
+    if(changed===false) select.value=previous;
+  }catch(error){
     select.value=previous;
-    alert('Status bijwerken mislukt: '+result.error.message);
-    return;
+    alert('Status bijwerken mislukt: '+error.message);
+  }finally{
+    select.disabled=false;
   }
-
-  const index=rawTenantIssueReports.findIndex(item=>item.id===report.id);
-  rawTenantIssueReports[index]=result.data;
-  render();
 }
 
 async function convertTenantReportToMaintenance(reportId){
@@ -4339,7 +4375,11 @@ function tenantReportsForPropertyHtml(propertyId){
         <strong>${escHtml(report.category)}</strong>
         <span>${statusBadge([report.status,tenantReportTone(report)])} ${report.submitted_at?new Date(report.submitted_at).toLocaleDateString('nl-NL'):'-'}</span>
         <small>${escHtml(report.description)}</small>
-        ${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-report-id="${escAttr(report.id)}">Foto bekijken</button>`:''}
+        <div class="tenantReportDetailActions">
+          <button class="miniLink tenantReportOpenBtn" data-report-id="${escAttr(report.id)}">Bekijken</button>
+          ${report.photo_path?`<button class="miniLink tenantReportPhotoBtn" data-photo-path="${escAttr(report.photo_path)}">Foto bekijken</button>`:''}
+          ${tenantReportIsOpen(report)?`<button class="miniLink tenantReportCompleteBtn" data-report-id="${escAttr(report.id)}">Afronden</button>`:''}
+        </div>
       </div>
     </div>
   `).join('');
@@ -6554,9 +6594,9 @@ function init(){
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
   sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storage:secureAuthStorage}});
   bindSessionSecurityEvents();
-  initializeTypedModals();
   if(el('rememberLogin')) el('rememberLogin').checked=rememberLoginEnabled();
   initSidebar();
+  ensureTenantReportUi();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
@@ -6590,11 +6630,17 @@ function init(){
     const issueQr=e.target.closest('.issueQrBtn');
     const convertTenantReport=e.target.closest('.convertTenantReportBtn');
     const tenantReportPhoto=e.target.closest('.tenantReportPhotoBtn');
+    const tenantReportOpen=e.target.closest('.tenantReportOpenBtn');
+    const tenantReportComplete=e.target.closest('.tenantReportCompleteBtn');
+    const tenantReportStart=e.target.closest('.tenantReportStartBtn');
     if(taskEdit) openTaskModal(taskEdit.dataset.taskId);
     if(newTaskForObject) openTaskModal('',newTaskForObject.dataset.id||'');
     if(issueQr) openIssueQrModal(issueQr.dataset.id);
     if(convertTenantReport) convertTenantReportToMaintenance(convertTenantReport.dataset.reportId);
-    if(tenantReportPhoto) openTenantReportPhoto(tenantReportPhoto.dataset.reportId);
+    if(tenantReportPhoto) openTenantReportPhoto(tenantReportPhoto.dataset.photoPath);
+    if(tenantReportOpen) openTenantReportModal(tenantReportOpen.dataset.reportId);
+    if(tenantReportComplete) completeTenantReport(tenantReportComplete.dataset.reportId);
+    if(tenantReportStart) startTenantReport(tenantReportStart.dataset.reportId);
     if(detail&&!taskEdit) renderDetail(detail.dataset.id);
     if(edit) openEditProperty(edit.dataset.id);
     if(upload) uploadDocument(upload.dataset.id);
