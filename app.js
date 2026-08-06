@@ -3911,22 +3911,26 @@ function notificationCenterVisibleItems(){
   return items;
 }
 
+function notificationButtonLabel(text){
+  return `<span class="notificationButtonLabel">${escHtml(text)}</span>`;
+}
+
 function notificationCenterActionHtml(item){
   const actions=[];
   const report=item.reportId?rawTenantIssueReports.find(row=>row.id===item.reportId):null;
   if(item.reportId){
-    actions.push(`<button type="button" class="notificationCenterAction primary tenantReportOpenBtn" data-report-id="${escAttr(item.reportId)}">Bekijken</button>`);
-    if(report&&tenantReportIsOpen(report)&&report.status!=='In behandeling') actions.push(`<button type="button" class="notificationCenterAction tenantReportStartBtn" data-report-id="${escAttr(item.reportId)}">In behandeling</button>`);
-    if(report&&tenantReportIsOpen(report)) actions.push(`<button type="button" class="notificationCenterAction complete tenantReportCompleteBtn" data-report-id="${escAttr(item.reportId)}">Afronden</button>`);
+    actions.push(`<button type="button" class="notificationCenterAction primary tenantReportOpenBtn" data-report-id="${escAttr(item.reportId)}">${notificationButtonLabel('Bekijken')}</button>`);
+    if(report&&tenantReportIsOpen(report)&&report.status!=='In behandeling') actions.push(`<button type="button" class="notificationCenterAction tenantReportStartBtn" data-report-id="${escAttr(item.reportId)}">${notificationButtonLabel('In behandeling')}</button>`);
+    if(report&&tenantReportIsOpen(report)) actions.push(`<button type="button" class="notificationCenterAction complete tenantReportCompleteBtn" data-report-id="${escAttr(item.reportId)}">${notificationButtonLabel('Afronden')}</button>`);
   }else if(item.type==='Huurverhoging'&&item.objectId){
-    actions.push(`<button type="button" class="notificationCenterAction primary rentEditBtn" data-id="${escAttr(item.objectId)}">Huurverhoging openen</button>`);
+    actions.push(`<button type="button" class="notificationCenterAction primary rentEditBtn" data-id="${escAttr(item.objectId)}">${notificationButtonLabel('Huurverhoging openen')}</button>`);
   }else if(item.taskId){
-    actions.push(`<button type="button" class="notificationCenterAction primary taskEditBtn" data-task-id="${escAttr(item.taskId)}">Taak openen</button>`);
+    actions.push(`<button type="button" class="notificationCenterAction primary taskEditBtn" data-task-id="${escAttr(item.taskId)}">${notificationButtonLabel('Taak openen')}</button>`);
   }else if(item.objectId){
-    actions.push(`<button type="button" class="notificationCenterAction primary detailBtn" data-id="${escAttr(item.objectId)}">Object bekijken</button>`);
+    actions.push(`<button type="button" class="notificationCenterAction primary detailBtn" data-id="${escAttr(item.objectId)}">${notificationButtonLabel('Object bekijken')}</button>`);
   }
   if(!notificationIsSnoozed(item)){
-    actions.push(`<button type="button" class="notificationCenterAction notificationSnoozeBtn" data-notification-key="${escAttr(dashboardNotificationKey(item))}">Herinner morgen</button>`);
+    actions.push(`<button type="button" class="notificationCenterAction notificationSnoozeBtn" data-notification-key="${escAttr(dashboardNotificationKey(item))}">${notificationButtonLabel('Herinner morgen')}</button>`);
   }
   return actions.join('');
 }
@@ -3952,7 +3956,7 @@ function ensureNotificationCenterUi(){
     const style=document.createElement('style');
     style.id='dashboardNotificationCenterStyles';
     style.textContent=`
-      .dashboardNotificationBell{position:fixed;right:22px;top:18px;z-index:9000;width:48px;height:48px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.18);cursor:pointer;display:grid;place-items:center;font-size:22px}
+      .dashboardNotificationBell{position:fixed;right:22px;top:18px;z-index:9000;width:48px;height:48px;border:1px solid #cbd5e1;border-radius:999px;background:#fff!important;color:#0f172a!important;-webkit-text-fill-color:currentColor!important;box-shadow:0 10px 30px rgba(15,23,42,.18);cursor:pointer;display:grid;place-items:center;padding:0!important;appearance:none;-webkit-appearance:none}.dashboardNotificationBellIcon{display:grid;place-items:center;width:24px;height:24px}.dashboardNotificationBellIcon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
       .dashboardNotificationBell:hover{background:#f8fafc}.dashboardNotificationBell[hidden]{display:none}
       .dashboardNotificationBellBadge{position:absolute;right:-4px;top:-5px;min-width:23px;height:23px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;border:2px solid #fff;font-size:11px;font-weight:900;display:grid;place-items:center}
       .dashboardNotificationBellBadge.is-zero{background:#64748b}
@@ -3960,20 +3964,20 @@ function ensureNotificationCenterUi(){
       .notificationCenterLayer.hidden{display:none}.notificationCenterCardShell{width:min(900px,100%);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:18px;box-shadow:0 28px 90px rgba(15,23,42,.4);overflow:hidden}
       .notificationCenterHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
       .notificationCenterEyebrow{margin:0 0 4px;color:#475569;font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.notificationCenterHeader h2{margin:0;font-size:24px}.notificationCenterHeader p{margin:6px 0 0;color:#64748b}
-      .notificationCenterClose{border:0;background:#fff;width:38px;height:38px;border-radius:999px;font-size:24px;cursor:pointer;box-shadow:0 1px 5px rgba(15,23,42,.12)}
+      .notificationCenterClose{border:1px solid #0f172a!important;background:#0f172a!important;color:#fff!important;-webkit-text-fill-color:currentColor!important;width:40px;height:40px;min-width:40px;border-radius:999px;cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.18);display:inline-flex!important;align-items:center;justify-content:center;padding:0!important;appearance:none;-webkit-appearance:none}.notificationCenterClose span{display:grid;place-items:center}.notificationCenterClose svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
       .notificationCenterSummary{display:flex;gap:9px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid #e2e8f0;background:#fff}
-      .notificationCenterFilter{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:8px 12px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}.notificationCenterFilter.active{background:#0f172a;color:#fff;border-color:#0f172a}
+      .notificationCenterFilter{border:1px solid #94a3b8!important;background:#fff!important;color:#0f172a!important;-webkit-text-fill-color:currentColor!important;border-radius:999px;padding:8px 12px;font:inherit!important;font-size:13px!important;line-height:1.25!important;font-weight:800!important;cursor:pointer;min-height:38px;appearance:none;-webkit-appearance:none;text-indent:0!important;opacity:1!important}.notificationCenterFilter.active{background:#0f172a!important;color:#fff!important;border-color:#0f172a!important;-webkit-text-fill-color:#fff!important}
       .notificationCenterBody{overflow:auto;padding:18px 24px 24px;display:grid;gap:12px;background:#f8fafc}
       .notificationCenterCard{border:1px solid #e2e8f0;border-left:7px solid #64748b;border-radius:12px;background:#fff;padding:14px 16px;box-shadow:0 3px 12px rgba(15,23,42,.05)}
       .notificationCenterCard--tenant{border-left-color:#2563eb;background:linear-gradient(90deg,#eff6ff 0,#fff 35%)}.notificationCenterCard--rent{border-left-color:#ea580c;background:linear-gradient(90deg,#fff7ed 0,#fff 35%)}
       .notificationCenterCard--maintenance{border-left-color:#dc2626;background:linear-gradient(90deg,#fef2f2 0,#fff 35%)}.notificationCenterCard--task{border-left-color:#7c3aed;background:linear-gradient(90deg,#f5f3ff 0,#fff 35%)}
       .notificationCenterCard.is-snoozed{opacity:.72}.notificationCenterCardTop{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px}.notificationCenterCardTop strong{display:block;margin-top:2px}
-      .notificationCenterCardIcon{width:34px;height:34px;border-radius:999px;background:#e2e8f0;display:grid;place-items:center;font-weight:900}.notificationCenterSource{display:block;color:#475569;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+      .notificationCenterCardIcon{width:36px;height:36px;border-radius:999px;background:#e2e8f0;color:#334155;display:grid;place-items:center}.notificationCenterCardIcon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.notificationCenterCardIcon .notificationIconDot{fill:currentColor;stroke:none}.notificationCenterCard--tenant .notificationCenterCardIcon{background:#dbeafe;color:#1d4ed8}.notificationCenterCard--rent .notificationCenterCardIcon{background:#ffedd5;color:#c2410c}.notificationCenterCard--maintenance .notificationCenterCardIcon{background:#fee2e2;color:#b91c1c}.notificationCenterCard--task .notificationCenterCardIcon{background:#ede9fe;color:#6d28d9}.notificationCenterSource{display:block;color:#475569;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
       .notificationCenterUrgency{border-radius:999px;padding:5px 8px;font-size:11px;font-weight:900}.notificationCenterUrgency--danger{background:#fee2e2;color:#b91c1c}.notificationCenterUrgency--warning{background:#ffedd5;color:#c2410c}.notificationCenterUrgency--ok{background:#dcfce7;color:#166534}
-      .notificationCenterCard p{margin:11px 0;color:#334155;line-height:1.5}.notificationCenterCardActions{display:flex;gap:8px;flex-wrap:wrap}.notificationCenterAction{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
-      .notificationCenterAction.primary{background:#0f172a;color:#fff;border-color:#0f172a}.notificationCenterCard--tenant .notificationCenterAction.primary{background:#2563eb;border-color:#2563eb}.notificationCenterCard--rent .notificationCenterAction.primary{background:#ea580c;border-color:#ea580c}.notificationCenterAction.complete{background:#15803d;color:#fff;border-color:#15803d}
+      .notificationCenterCard p{margin:11px 0;color:#334155;line-height:1.5}.notificationCenterCardActions{display:flex;gap:8px;flex-wrap:wrap}.notificationCenterAction{border:1px solid #94a3b8!important;background:#fff!important;color:#0f172a!important;-webkit-text-fill-color:currentColor!important;border-radius:8px;padding:9px 12px;font:inherit!important;font-size:13px!important;line-height:1.25!important;font-weight:800!important;cursor:pointer;min-height:40px;display:inline-flex!important;align-items:center;justify-content:center;appearance:none;-webkit-appearance:none;text-indent:0!important;opacity:1!important;white-space:normal!important}.notificationButtonLabel{display:inline-block!important;color:inherit!important;-webkit-text-fill-color:inherit!important;opacity:1!important;visibility:visible!important;font-size:inherit!important;line-height:inherit!important;text-indent:0!important}
+      .notificationCenterAction.primary{background:#0f172a!important;color:#fff!important;border-color:#0f172a!important;-webkit-text-fill-color:#fff!important}.notificationCenterCard--tenant .notificationCenterAction.primary{background:#2563eb!important;border-color:#2563eb!important}.notificationCenterCard--rent .notificationCenterAction.primary{background:#ea580c!important;border-color:#ea580c!important}.notificationCenterAction.complete{background:#15803d!important;color:#fff!important;border-color:#15803d!important;-webkit-text-fill-color:#fff!important}.notificationCenterAction:hover,.notificationCenterFilter:hover,.notificationCenterFooter button:hover{filter:brightness(.96)}.notificationCenterAction:focus-visible,.notificationCenterFilter:focus-visible,.notificationCenterClose:focus-visible,.notificationCenterFooter button:focus-visible,.dashboardNotificationBell:focus-visible{outline:3px solid #38bdf8!important;outline-offset:2px}
       .notificationCenterSnoozed{margin:8px 0;padding:8px 10px;border-radius:8px;background:#f1f5f9;color:#475569;font-size:12px;font-weight:700}.notificationCenterEmpty{padding:34px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:12px}
-      .notificationCenterFooter{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:15px 24px;border-top:1px solid #e2e8f0;background:#fff}.notificationCenterFooter button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:9px 12px;font:inherit;font-weight:800;cursor:pointer}.notificationCenterFooter .primary{background:#0f172a;color:#fff;border-color:#0f172a}
+      .notificationCenterFooter{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:15px 24px;border-top:1px solid #e2e8f0;background:#fff}.notificationCenterFooter button{border:1px solid #94a3b8!important;background:#fff!important;color:#0f172a!important;-webkit-text-fill-color:currentColor!important;border-radius:9px;padding:10px 13px;font:inherit!important;font-size:13px!important;line-height:1.25!important;font-weight:800!important;cursor:pointer;min-height:41px;display:inline-flex!important;align-items:center;justify-content:center;appearance:none;-webkit-appearance:none;text-indent:0!important;opacity:1!important}.notificationCenterFooter .primary{background:#0f172a!important;color:#fff!important;border-color:#0f172a!important;-webkit-text-fill-color:#fff!important}
       @media(max-width:720px){.dashboardNotificationBell{right:12px;top:12px}.notificationCenterLayer{padding:6px}.notificationCenterCardShell{max-height:97vh;border-radius:12px}.notificationCenterHeader,.notificationCenterSummary,.notificationCenterBody,.notificationCenterFooter{padding-left:14px;padding-right:14px}.notificationCenterCardTop{grid-template-columns:auto 1fr}.notificationCenterUrgency{grid-column:2;justify-self:start}.notificationCenterFooter{flex-direction:column}.notificationCenterFooter button{width:100%}}
     `;
     document.head.appendChild(style);
@@ -3985,7 +3989,7 @@ function ensureNotificationCenterUi(){
     bell.type='button';
     bell.className='dashboardNotificationBell';
     bell.setAttribute('aria-label','Dashboardmeldingen openen');
-    bell.innerHTML='<span aria-hidden="true">🔔</span><span id="dashboardNotificationBellBadge" class="dashboardNotificationBellBadge is-zero">0</span>';
+    bell.innerHTML=`<span class="dashboardNotificationBellIcon" aria-hidden="true">${notificationIconSvg('bell')}</span><span id="dashboardNotificationBellBadge" class="dashboardNotificationBellBadge is-zero">0</span>`;
     bell.hidden=true;
     document.body.appendChild(bell);
   }
@@ -3998,16 +4002,16 @@ function ensureNotificationCenterUi(){
   modal.setAttribute('aria-modal','true');
   modal.setAttribute('aria-labelledby','notificationCenterTitle');
   modal.innerHTML=`<section class="notificationCenterCardShell">
-    <header class="notificationCenterHeader"><div><p class="notificationCenterEyebrow">Dashboardmeldingen</p><h2 id="notificationCenterTitle">Aandacht nodig</h2><p id="notificationCenterSubtitle">Alle openstaande aandachtspunten op één plek.</p></div><button type="button" class="notificationCenterClose" aria-label="Sluiten">×</button></header>
+    <header class="notificationCenterHeader"><div><p class="notificationCenterEyebrow">Dashboardmeldingen</p><h2 id="notificationCenterTitle">Aandacht nodig</h2><p id="notificationCenterSubtitle">Alle openstaande aandachtspunten op één plek.</p></div><button type="button" class="notificationCenterClose" aria-label="Sluiten"><span aria-hidden="true">${notificationIconSvg('close')}</span></button></header>
     <div id="notificationCenterSummary" class="notificationCenterSummary"></div>
     <div id="notificationCenterBody" class="notificationCenterBody"></div>
-    <footer class="notificationCenterFooter"><button type="button" id="notificationCenterPageBtn" class="primary">Open volledige meldingenpagina</button><button type="button" class="notificationCenterClose">Sluiten</button></footer>
+    <footer class="notificationCenterFooter"><button type="button" id="notificationCenterPageBtn" class="primary"><span class="notificationButtonLabel">Open volledige meldingenpagina</span></button><button type="button" class="notificationCenterFooterClose"><span class="notificationButtonLabel">Sluiten</span></button></footer>
   </section>`;
   document.body.appendChild(modal);
 
   el('dashboardNotificationBell').addEventListener('click',()=>openNotificationCenter({scope:'all'}));
   modal.addEventListener('click',event=>{
-    if(event.target===modal||event.target.closest('.notificationCenterClose')){
+    if(event.target===modal||event.target.closest('.notificationCenterClose,.notificationCenterFooterClose')){
       closeNotificationCenter();
       return;
     }
@@ -4102,12 +4106,25 @@ function maybeOpenDashboardNotificationOverview(){
   },450);
 }
 
+function notificationIconSvg(name){
+  const icons={
+    tenant:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 19c.7-3.7 3-5.5 6.5-5.5s5.8 1.8 6.5 5.5"></path></svg>',
+    rent:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 6.5h-5a5.5 5.5 0 0 0 0 11h5"></path><path d="M7.5 10h7M7.5 14h6"></path></svg>',
+    task:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="m8.2 12.2 2.4 2.4 5.4-5.5"></path></svg>',
+    maintenance:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 6.1a4.1 4.1 0 0 0-5.2 5.2L4.7 16a2.1 2.1 0 0 0 3 3l4.6-4.6a4.1 4.1 0 0 0 5.2-5.2l-2.6 2.6-2.7-2.7 2.3-3z"></path></svg>',
+    automatic:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4 3.8 19h16.4L12 4z"></path><path d="M12 9v4.5"></path><circle cx="12" cy="16.5" r=".7" class="notificationIconDot"></circle></svg>',
+    bell:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 5 2 5.6 2 7H4.5c0-1.4 2-2 2-7z"></path><path d="M9.5 19a2.8 2.8 0 0 0 5 0"></path></svg>',
+    close:'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"></path></svg>'
+  };
+  return icons[name]||icons.automatic;
+}
+
 function notificationVisual(n){
-  if(n.reportId) return {kind:'tenant',label:'Huurdersmelding',icon:'👤'};
-  if(n.type==='Huurverhoging') return {kind:'rent',label:'Automatische huurmelding',icon:'€'};
-  if(n.type==='Taak') return {kind:'task',label:'Taakmelding',icon:'✓'};
-  if(n.type==='Onderhoud'||n.type==='Keuring'||n.type==='Energielabel') return {kind:'maintenance',label:'Automatische beheermelding',icon:'⚙'};
-  return {kind:'automatic',label:'Automatische melding',icon:'!'};
+  if(n.reportId) return {kind:'tenant',label:'Huurdersmelding',icon:notificationIconSvg('tenant')};
+  if(n.type==='Huurverhoging') return {kind:'rent',label:'Automatische huurmelding',icon:notificationIconSvg('rent')};
+  if(n.type==='Taak') return {kind:'task',label:'Taakmelding',icon:notificationIconSvg('task')};
+  if(n.type==='Onderhoud'||n.type==='Keuring'||n.type==='Energielabel') return {kind:'maintenance',label:'Automatische beheermelding',icon:notificationIconSvg('maintenance')};
+  return {kind:'automatic',label:'Automatische melding',icon:notificationIconSvg('automatic')};
 }
 function actionHtml(n){
   const visual=notificationVisual(n);
@@ -4395,18 +4412,18 @@ function ensureTenantReportUi(){
       .alert.notificationCard--maintenance{border-left-color:#dc2626!important;background:linear-gradient(90deg,#fef2f2 0,#fff 44%)!important}
       .alert.notificationCard--task{border-left-color:#7c3aed!important;background:linear-gradient(90deg,#f5f3ff 0,#fff 44%)!important}
       .notificationCardHeader{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-      .notificationIcon{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:999px;background:#e2e8f0;font-weight:800}
+      .notificationIcon{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:999px;background:#e2e8f0;color:#334155;font-weight:800}.notificationIcon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.notificationIcon .notificationIconDot{fill:currentColor;stroke:none}
       .notificationCard--tenant .notificationIcon{background:#dbeafe;color:#1d4ed8}
       .notificationCard--rent .notificationIcon{background:#ffedd5;color:#c2410c}
       .notificationSource{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#334155}
       .notificationTitle{font-size:15px}
       .notificationText{line-height:1.45}
       .notificationActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
-      .notificationAction{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+      .notificationAction{border:1px solid #94a3b8!important;background:#fff!important;color:#0f172a!important;-webkit-text-fill-color:currentColor!important;border-radius:8px;padding:8px 11px;font:inherit!important;font-size:13px!important;line-height:1.25!important;font-weight:700!important;cursor:pointer;min-height:38px;display:inline-flex!important;align-items:center;justify-content:center;appearance:none;-webkit-appearance:none;text-indent:0!important;opacity:1!important}
       .notificationAction:hover{background:#f8fafc}
-      .notificationPrimary{background:#0f172a;color:#fff;border-color:#0f172a}
-      .notificationCard--tenant .notificationPrimary{background:#2563eb;border-color:#2563eb}
-      .notificationCard--rent .notificationPrimary{background:#ea580c;border-color:#ea580c}
+      .notificationPrimary{background:#0f172a!important;color:#fff!important;border-color:#0f172a!important;-webkit-text-fill-color:#fff!important}
+      .notificationCard--tenant .notificationPrimary{background:#2563eb!important;border-color:#2563eb!important}
+      .notificationCard--rent .notificationPrimary{background:#ea580c!important;border-color:#ea580c!important}
       #rentIncreaseModal>div,#rentIncreaseModal .modalCard,#rentIncreaseModal .modalContent{border-top:8px solid #ea580c!important}
       #rentIncreaseModal h2,#rentIncreaseModal h3{color:#c2410c}
       .tenantReportModalLayer{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.58)}
