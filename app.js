@@ -3,6 +3,12 @@ const SUPABASE_KEY = 'sb_publishable_dd1dOvBAwPgA1AeqNOQHDg_Wdjvf-ze';
 
 let sb, query = '', notificationTypeFilter = '', taskStatusFilter = 'open', taskPriorityFilter = '', taskObjectFilter = '', taskDateFilter = '', tenantReportStatusFilter = 'open', tenantReportUrgencyFilter = '', tenantReportObjectFilter = '', dataCheckStatusFilter = 'incomplete', dataCheckGroupFilter = '', objectCityFilter = '', objectTypeFilter = '', objectStatusFilter = '', objectOccupancyFilter = '', contractStateFilter = '', contractDurationFilter = '', contractNoticeFilter = '', contractCityFilter = '', maintenanceTypeFilter = '', maintenanceStatusFilter = '', maintenanceObjectFilter = '', inspectionTypeFilter = '', inspectionStatusFilter = '', inspectionObjectFilter = '', vastgoedData = [], rawProperties = [], rawContracts = [], rawTenants = [], rawMaintenance = [], rawDocuments = [], rawMaintenanceHistory = [], rawInspections = [], rawTasks = [], tasksReady = true, rawIssuePortals = [], issuePortalsReady = true, rawTenantIssueReports = [], tenantIssueReportsReady = true, activeIssueQrPropertyId = null, rawDataCheckOverrides = [], dataCheckOverridesReady = true, selectedPropertyId = null;
 let activeTenantReportId=null;
+let rawDashboardNotificationStates=[];
+let dashboardNotificationStateReady=true;
+let notificationCenterAutoHandled=false;
+let notificationCenterScope='all';
+let notificationCenterFilter='all';
+let notificationCenterAutoKeys=new Set();
 let updateContractStickyHeader = () => {};
 const euro = n => new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(n || 0));
 const dateFmt = s => {
@@ -339,7 +345,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=38.4',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=40.42.3',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -387,7 +393,10 @@ const DEFAULT_NOTIFICATION_RULES={
   maintenance:{enabled:true,days:[30,7,1,0]},
   scope_inspection:{enabled:true,days:[90,30,7]},
   energy_label:{enabled:true,days:[180,90,30,7]},
-  rent_increase:{enabled:true,days:[60,30,7]}
+  rent_increase:{enabled:true,days:[60,30,7]},
+  vacancy:{enabled:true,days:[]},
+  task:{enabled:true,days:[]},
+  tenant_report:{enabled:true,days:[]}
 };
 const DEFAULT_NOTIFICATION_SETTINGS={
   id:1,
@@ -1811,6 +1820,9 @@ function fillNotificationSettingsForm(){
 
 function collectNotificationSettingsForm(){
   const rules={};
+  Object.entries(DEFAULT_NOTIFICATION_RULES).forEach(([key,rule])=>{
+    rules[key]={enabled:Boolean(rule.enabled),days:[...(rule.days||[])]};
+  });
   document.querySelectorAll('[data-notification-rule]').forEach(container=>{
     const key=container.dataset.notificationRule;
     const enabled=Boolean(container.querySelector('.notificationRuleEnabled')?.checked);
@@ -1847,56 +1859,44 @@ function notificationDaysBetween(referenceIso,targetIso){
   return Math.round((to-from)/86400000);
 }
 
-function buildEmailNotificationEvents(data,settings,referenceIso=isoToday()){
-  const events=[];
+function notificationEmailRule(type){
+  if(type==='Opzegdatum') return 'notice_date';
+  if(['Contract','Opzegging','Contractcontrole','Contractverlenging'].includes(type)) return 'contract_end';
+  if(type==='Onderhoud') return 'maintenance';
+  if(type==='Keuring') return 'scope_inspection';
+  if(type==='Energielabel') return 'energy_label';
+  if(type==='Huurverhoging') return 'rent_increase';
+  if(type==='Leegstand') return 'vacancy';
+  if(type==='Taak') return 'task';
+  if(type==='Huurdersmelding') return 'tenant_report';
+  return 'contract_end';
+}
+
+function buildEmailNotificationEvents(data,settings){
   const seen=new Set();
-  const add=(event)=>{
-    if(!event.date||!event.rule) return;
-    const rule=settings.rules?.[event.rule];
-    if(!rule?.enabled) return;
-    const days=notificationDaysBetween(referenceIso,event.date);
-    if(days===null||days<0||!(rule.days||[]).includes(days)) return;
-    const key=`${event.rule}|${event.objectId||event.object}|${event.date}|${event.title}`;
-    if(seen.has(key)) return;
-    seen.add(key);
-    events.push({...event,days});
-  };
-
-  data.forEach(r=>{
-    const address=[r.straatnaam,r.huisnummer,r.postcode].filter(Boolean).join(' ');
-    const objectText=[r.object,address].filter(Boolean).join(' · ');
-    if(r.contract?.id&&!r.contract_opgezegd&&!r.contract_onbepaalde&&r.opzegdatum){
-      add({rule:'notice_date',date:r.opzegdatum,title:'Uiterste opzegdatum',object:r.object,objectId:r.id,detail:objectText});
-    }
-    if(r.contract?.id&&!r.contract_opgezegd&&!r.contract_onbepaalde&&r.einddatum_contract){
-      add({rule:'contract_end',date:r.einddatum_contract,title:'Contracteinde',object:r.object,objectId:r.id,detail:objectText});
-    }
-    const scopeDate=r.property?.scope_valid_until||'';
-    if(scopeDate){
-      add({rule:'scope_inspection',date:scopeDate,title:'Scope-inspectie verloopt',object:r.object,objectId:r.id,detail:objectText});
-    }
-    if(r.energielabel_verplicht&&r.energielabel_geldig_tot){
-      add({rule:'energy_label',date:r.energielabel_geldig_tot,title:'Energielabel verloopt',object:r.object,objectId:r.id,detail:objectText});
-    }
-    const rentDate=r.contract?.id?rentIncreaseEffectiveDate(r):null;
-    if(rentDate&&rentIncreaseAppliesDuringContract(r,rentDate)){
-      add({rule:'rent_increase',date:rentDate,title:'Huurverhoging',object:r.object,objectId:r.id,detail:objectText});
-    }
-  });
-
-  maintenanceSourceRows(data).forEach(row=>{
-    if(!row.planned_date||maintenanceStatusLabel(row.status)==='Afgerond') return;
-    add({
-      rule:'maintenance',
-      date:row.planned_date,
-      title:`Onderhoud: ${row.type||'gepland'}`,
-      object:row.object,
-      objectId:row.objectId,
-      detail:[row.object,row.address].filter(Boolean).join(' · ')
-    });
-  });
-
-  return events.sort((a,b)=>a.days-b.days||a.date.localeCompare(b.date)||a.title.localeCompare(b.title,'nl',{sensitivity:'base'}));
+  const score={danger:0,warning:1,ok:2};
+  return notificationItems(data)
+    .filter(item=>{
+      const ruleKey=notificationEmailRule(item.type);
+      return settings.rules?.[ruleKey]?.enabled!==false;
+    })
+    .filter(item=>{
+      const key=[item.type,item.title,item.objectId||'',item.taskId||'',item.reportId||''].join('|');
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(item=>({
+      rule:notificationEmailRule(item.type),
+      sev:item.sev||'warning',
+      type:item.type||'Melding',
+      title:item.title||'Melding',
+      detail:item.text||'',
+      objectId:item.objectId||null,
+      taskId:item.taskId||null,
+      reportId:item.reportId||null
+    }))
+    .sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9)||a.type.localeCompare(b.type,'nl',{sensitivity:'base'})||a.title.localeCompare(b.title,'nl',{sensitivity:'base'}));
 }
 
 function notificationDayLabel(days){
@@ -1929,16 +1929,23 @@ function renderNotificationPreview(settingsOverride=null){
   }
   const events=buildEmailNotificationEvents(vastgoedData,settings);
   const recipients=settings.recipients.length?settings.recipients.join(', '):'Nog geen ontvanger ingesteld';
-  const subject=`Vastgoedmeldingen – ${new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'long',year:'numeric'}).format(new Date())}`;
-  const groups={};
-  events.forEach(event=>(groups[event.days]||=[]).push(event));
+  const subject=`Dagelijks vastgoedoverzicht – ${new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'long',year:'numeric'}).format(new Date())} – ${events.length} melding${events.length===1?'':'en'}`;
+  const sections=[
+    {severity:'danger',title:'Urgent / direct actie nodig'},
+    {severity:'warning',title:'Aandacht nodig'},
+    {severity:'ok',title:'Openstaande huurdersmeldingen'}
+  ];
   const body=events.length
-    ? Object.keys(groups).map(Number).sort((a,b)=>a-b).map(days=>`<div class="notificationEmailGroup"><h5>${escHtml(notificationDayLabel(days))}</h5>${groups[days].map(event=>`<div class="notificationEmailEvent"><strong>${escHtml(event.title)}</strong><span>${escHtml(event.detail||event.object||'')}</span><span>Datum: ${escHtml(dateFmt(event.date))}</span></div>`).join('')}</div>`).join('')
-    : `<div class="notificationEmptyPreview">${settings.only_when_events?'Er zijn vandaag geen gebeurtenissen op de ingestelde herinneringsmomenten. Er zou geen e-mail worden verstuurd.':'Er zijn vandaag geen gebeurtenissen; de overzichtsmail zou leeg zijn.'}</div>`;
+    ? sections.map(section=>{
+        const rows=events.filter(event=>event.sev===section.severity);
+        if(!rows.length) return '';
+        return `<div class="notificationEmailGroup"><h5>${escHtml(section.title)} (${rows.length})</h5>${rows.map(event=>`<div class="notificationEmailEvent"><strong><span class="typeTag">${escHtml(event.type)}</span> ${escHtml(event.title)}</strong><span>${escHtml(event.detail||'')}</span></div>`).join('')}</div>`;
+      }).join('')
+    : `<div class="notificationEmptyPreview">${settings.only_when_events?'Er zijn geen openstaande meldingen. Er zou geen e-mail worden verstuurd.':'Er zijn geen openstaande meldingen; de overzichtsmail zou leeg zijn.'}</div>`;
   const connectionText=notificationFunctionStatus.outlookConfigured
     ? (settings.test_mode?'Testmodus actief':'Productiemodus')
     : 'Outlook-koppeling nog niet compleet';
-  target.innerHTML=`<div class="notificationEmailHeader"><div><strong>Aan:</strong> ${escHtml(recipients)}</div><div><strong>Onderwerp:</strong> ${escHtml(subject)}</div><div><strong>Modus:</strong> ${escHtml(connectionText)}</div></div><div class="notificationEmailBody"><h4>Vastgoedmeldingen</h4>${body}</div>`;
+  target.innerHTML=`<div class="notificationEmailHeader"><div><strong>Aan:</strong> ${escHtml(recipients)}</div><div><strong>Onderwerp:</strong> ${escHtml(subject)}</div><div><strong>Modus:</strong> ${escHtml(connectionText)}</div></div><div class="notificationEmailBody"><h4>Dagelijks vastgoedoverzicht</h4><p>Dit overzicht bevat alle meldingen die op dit moment in het dashboard om aandacht vragen.</p>${body}</div>`;
 
   const next=notificationNextRunDate(settings);
   if(el('notificationNextRun')){
@@ -2655,7 +2662,7 @@ function contractTimeline(contract={}){
 const monthMap={januari:0,februari:1,maart:2,april:3,mei:4,juni:5,juli:6,augustus:7,september:8,oktober:9,november:10,december:11};
 function daysUntilRentIncrease(monthName){ if(!monthName) return null; const key=String(monthName).trim().toLowerCase(); if(!(key in monthMap)) return null; const today=new Date(); today.setHours(0,0,0,0); let target=new Date(today.getFullYear(), monthMap[key], 1); if(target<today) target=new Date(today.getFullYear()+1, monthMap[key], 1); return Math.ceil((target-today)/(1000*60*60*24)); }
 function rentIncreaseStatus(monthName){ const days=daysUntilRentIncrease(monthName); if(days===null) return ['Niet ingesteld','warning']; if(days<=30) return ['Deze maand/komende 30 dagen','danger']; if(days<=60) return ['Binnen 60 dagen','warning']; return ['Op orde','ok']; }
-function actionItem(sev,type,title,text,objectId,taskId,reportId){ return {sev,type,title,text,objectId,taskId,reportId}; }
+function actionItem(sev,type,title,text,objectId,taskId,reportId,sourceId){ return {sev,type,title,text,objectId,taskId,reportId,sourceId}; }
 const SIDEBAR_STORAGE_KEY='vastgoedSidebarCollapsed';
 function setSidebarCollapsed(collapsed,{persist=true}={}){
   const sidebar=document.querySelector('.sidebar');
@@ -2778,8 +2785,8 @@ function normalize(properties, contracts, tenants, maintenance, documents=[], hi
     return {id:p.id, property:p, contract, contract_timeline:timeline, tenant, maintenance:plannedMaintenance, maintenance_history:maintenanceHistory, documenten:documentsList, object:objectName, straatnaam:p.address||'', huisnummer:p.house_number||'', postcode:p.postal_code||'', stad:p.city||'', type:p.property_type||'-', status:p.status||'-', huurder:tenant.name||p.tenant_name||'-', email:tenant.email||p.email||'', telefoon:tenant.phone||p.phone||'', factuur_naam:p.billing_name||'', factuur_adres:p.billing_address||'', factuur_huisnummer:p.billing_house_number||'', factuur_postcode:p.billing_postal_code||'', factuur_stad:p.billing_city||'', huur_pm:rentPm, huur_pj:rentPj, servicekosten:p.service_costs||0, energiekosten:p.energy_costs||0, waarborgsom:p.deposit||0, concerngarantie:p.corporate_guarantee||0, bankgarantie:p.bank_guarantee||0, aankoopwaarde:p.purchase_value||0, woz_waarde:p.woz_value||0, hypotheek:p.mortgage_value||0, hypotheekrente:p.mortgage_interest||0, aankoopdatum:p.purchase_date||'', foto_url:p.photo_url||'', bruto_rendement:grossYield, overwaarde:(Number(p.woz_value||0)-Number(p.mortgage_value||0)), energielabel:p.energy_label||'-', energielabel_geldig_tot:p.energy_label_valid_until||'', energielabel_verplicht:p.energy_label_required!==false, maand_huurverhoging:p.rent_increase_month||'', oorspronkelijke_einddatum_contract:timeline.originalEnd, einddatum_contract:contractEnd, contract_onbepaalde:indefiniteContract, contract_status:timeline.storedStatus, contract_opgezegd:timeline.terminated, startdatum_contract:contract.start_date||'', oorspronkelijke_opzegdatum:timeline.initialNotice, opzegdatum:noticeDate, opzegtermijn_maanden:timeline.noticeMonths, verlenging_jaren:timeline.renewalYears, aantal_verlengingen:timeline.renewalCount, opzegdatum_afwijking:timeline.noticeMismatch, scope_inspectie_geldig_tot:scopeDate, onderhoud_titel:plannedMaintenance.title||'Scope-inspectie', onderhoud_status:plannedMaintenance.status||'-', onderhoud_kosten:plannedMaintenance.cost||0, onderhoud_prioriteit:plannedMaintenance.priority||'-', onderhoud_omschrijving:plannedMaintenance.description||'', status_contract:timeline.contractStatus, status_opzeg:timeline.noticeStatus, status_scope:getDateStatus(scopeDate,365,90), status_energy:p.energy_label_required===false?['Niet verplicht','ok']:getDateStatus(p.energy_label_valid_until,180,60), status_rent_increase:rentIncreaseStatus(p.rent_increase_month)};
   });
 }
-function showLogin(message=''){ el('loginView').classList.remove('hidden'); el('appView').classList.add('hidden'); if(el('loginError')) el('loginError').textContent=message; if(el('password')) el('password').value=''; }
-function showApp(){ el('loginView').classList.add('hidden'); el('appView').classList.remove('hidden'); }
+function showLogin(message=''){ el('loginView').classList.remove('hidden'); el('appView').classList.add('hidden'); if(el('dashboardNotificationBell')) el('dashboardNotificationBell').hidden=true; closeNotificationCenter(); if(el('loginError')) el('loginError').textContent=message; if(el('password')) el('password').value=''; }
+function showApp(){ el('loginView').classList.add('hidden'); el('appView').classList.remove('hidden'); if(el('dashboardNotificationBell')) el('dashboardNotificationBell').hidden=false; }
 async function checkSession(){
   const {data,error}=await sb.auth.getSession();
   if(error){
@@ -2803,7 +2810,7 @@ async function checkSession(){
 }
 async function loadData(){
   try{
-    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr,tsk,ipr,tir]=await Promise.all([
+    const [pr,cr,tr,mr,dr,hr,rr,sr,ns,nl,ir,dcr,tsk,ipr,tir,dns]=await Promise.all([
       sb.from('properties').select('*').order('created_at',{ascending:false}),
       sb.from('contracts').select('*'),
       sb.from('tenants').select('*'),
@@ -2818,7 +2825,8 @@ async function loadData(){
       sb.from('property_data_check_overrides').select('*').order('updated_at',{ascending:false}),
       sb.from('property_tasks').select('*').order('created_at',{ascending:false}),
       sb.from('property_issue_portals').select('*').order('created_at',{ascending:false}),
-      sb.from('tenant_issue_reports').select('*').order('submitted_at',{ascending:false})
+      sb.from('tenant_issue_reports').select('*').order('submitted_at',{ascending:false}),
+      sb.from('dashboard_notification_state').select('*').order('updated_at',{ascending:false})
     ]);
     [pr,cr,tr,mr,dr,hr].forEach(r=>{if(r.error) throw r.error});
     rawProperties=pr.data||[]; rawContracts=cr.data||[]; rawTenants=tr.data||[]; rawMaintenance=mr.data||[]; rawDocuments=dr.data||[]; rawMaintenanceHistory=hr.data||[];
@@ -2892,9 +2900,18 @@ async function loadData(){
       rawTenantIssueReports=tir.data||[];
       tenantIssueReportsReady=true;
     }
+    if(dns.error){
+      console.warn('Dashboardmeldingsstatus nog niet beschikbaar:',dns.error.message);
+      rawDashboardNotificationStates=[];
+      dashboardNotificationStateReady=false;
+    }else{
+      rawDashboardNotificationStates=dns.data||[];
+      dashboardNotificationStateReady=true;
+    }
     vastgoedData=normalize(rawProperties, rawContracts, rawTenants, rawMaintenance, rawDocuments, rawMaintenanceHistory);
     el('statusText').textContent=`Live data uit Supabase. Laatst geladen: ${new Date().toLocaleTimeString('nl-NL')}`;
     render();
+    maybeOpenDashboardNotificationOverview();
     renderNotificationSettings();
     loadNotificationFunctionStatus();
     if(selectedPropertyId) renderDetail(selectedPropertyId);
@@ -2980,13 +2997,13 @@ function notificationItems(data){
     const date=inspectionDeadline(row);
     const days=daysUntil(date);
     if(status==='Afgekeurd'){
-      items.push(actionItem('danger','Keuring',`${row.inspection_type} afgekeurd: ${property?.object||'Onbekend object'}`,'Plan herstel en een eventuele herkeuring.',row.property_id));
+      items.push(actionItem('danger','Keuring',`${row.inspection_type} afgekeurd: ${property?.object||'Onbekend object'}`,'Plan herstel en een eventuele herkeuring.',row.property_id,null,null,row.id));
     }else if(status==='Verlopen'){
-      items.push(actionItem('danger','Keuring',`${row.inspection_type} verlopen: ${property?.object||'Onbekend object'}`,`Vervaldatum: ${dateFmt(date)}.`,row.property_id));
+      items.push(actionItem('danger','Keuring',`${row.inspection_type} verlopen: ${property?.object||'Onbekend object'}`,`Vervaldatum: ${dateFmt(date)}.`,row.property_id,null,null,row.id));
     }else if(status==='Verloopt binnenkort'&&days!==null){
-      items.push(actionItem(days<=30?'danger':'warning','Keuring',`${row.inspection_type} verloopt binnen ${days} dagen`,`${property?.object||'Onbekend object'}: ${dateFmt(date)}.`,row.property_id));
+      items.push(actionItem(days<=30?'danger':'warning','Keuring',`${row.inspection_type} verloopt binnen ${days} dagen`,`${property?.object||'Onbekend object'}: ${dateFmt(date)}.`,row.property_id,null,null,row.id));
     }else if(status==='Nog te plannen'){
-      items.push(actionItem('warning','Keuring',`${row.inspection_type} nog te plannen: ${property?.object||'Onbekend object'}`,'Vul een keuringsdatum of volgende keuringsdatum in.',row.property_id));
+      items.push(actionItem('warning','Keuring',`${row.inspection_type} nog te plannen: ${property?.object||'Onbekend object'}`,'Vul een keuringsdatum of volgende keuringsdatum in.',row.property_id,null,null,row.id));
     }
   });
   rawTasks
@@ -3767,6 +3784,322 @@ function renderNotificationFilters(items){
 function filteredNotificationItems(items){
   if(!notificationTypeFilter) return items;
   return items.filter(item=>item.type===notificationTypeFilter);
+}
+
+
+const DASHBOARD_NOTIFICATION_LOCAL_KEY='vastgoedDashboardNotificationStateV1';
+
+function notificationKeyPart(value){
+  return norm(value)
+    .replace(/\b\d+\b/g,'#')
+    .replace(/[^a-z0-9_-]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,100)||'melding';
+}
+
+function dashboardNotificationKey(item){
+  if(item.reportId) return `tenant-report:${item.reportId}`;
+  if(item.taskId) return `task:${item.taskId}`;
+  if(item.sourceId) return `${notificationKeyPart(item.type)}:${item.sourceId}`;
+  return [notificationKeyPart(item.type),item.objectId||'algemeen',notificationKeyPart(item.title)].join(':');
+}
+
+function readLocalDashboardNotificationStates(){
+  try{
+    const value=JSON.parse(localStorage.getItem(DASHBOARD_NOTIFICATION_LOCAL_KEY)||'{}');
+    return value&&typeof value==='object'?value:{};
+  }catch(error){
+    return {};
+  }
+}
+
+function writeLocalDashboardNotificationStates(states){
+  try{ localStorage.setItem(DASHBOARD_NOTIFICATION_LOCAL_KEY,JSON.stringify(states)); }
+  catch(error){ console.warn('Lokale meldingsstatus kon niet worden opgeslagen:',error.message); }
+}
+
+function dashboardNotificationState(item){
+  const key=dashboardNotificationKey(item);
+  const remote=rawDashboardNotificationStates.find(row=>row.notification_key===key);
+  if(remote) return remote;
+  const local=readLocalDashboardNotificationStates()[key];
+  return local?{notification_key:key,...local}:null;
+}
+
+function notificationDateIsToday(value){
+  if(!value) return false;
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return false;
+  const today=new Date();
+  return date.getFullYear()===today.getFullYear()&&date.getMonth()===today.getMonth()&&date.getDate()===today.getDate();
+}
+
+function notificationIsSnoozed(item){
+  const state=dashboardNotificationState(item);
+  if(!state?.snoozed_until) return false;
+  const until=new Date(state.snoozed_until);
+  return !Number.isNaN(until.getTime())&&until.getTime()>Date.now();
+}
+
+function notificationNeedsAutoPopup(item){
+  if(notificationIsSnoozed(item)) return false;
+  const state=dashboardNotificationState(item);
+  return !notificationDateIsToday(state?.seen_at);
+}
+
+function tomorrowReminderIso(){
+  const date=new Date();
+  date.setDate(date.getDate()+1);
+  date.setHours(8,0,0,0);
+  return date.toISOString();
+}
+
+async function saveDashboardNotificationState(item,patch){
+  const key=dashboardNotificationKey(item);
+  const localStates=readLocalDashboardNotificationStates();
+  const existing=dashboardNotificationState(item)||{};
+  const next={
+    seen_at:patch.seen_at!==undefined?patch.seen_at:(existing.seen_at||null),
+    snoozed_until:patch.snoozed_until!==undefined?patch.snoozed_until:(existing.snoozed_until||null),
+    updated_at:new Date().toISOString()
+  };
+  localStates[key]=next;
+  writeLocalDashboardNotificationStates(localStates);
+
+  const localIndex=rawDashboardNotificationStates.findIndex(row=>row.notification_key===key);
+  const optimistic={...existing,notification_key:key,...next};
+  if(localIndex>=0) rawDashboardNotificationStates[localIndex]=optimistic;
+  else rawDashboardNotificationStates.push(optimistic);
+
+  if(!dashboardNotificationStateReady||!sb) return optimistic;
+  const result=await sb.from('dashboard_notification_state').upsert({
+    notification_key:key,
+    seen_at:next.seen_at,
+    snoozed_until:next.snoozed_until,
+    updated_at:next.updated_at
+  },{onConflict:'user_id,notification_key'}).select('*').single();
+  if(result.error){
+    dashboardNotificationStateReady=false;
+    console.warn('Meldingsstatus kon niet in Supabase worden opgeslagen:',result.error.message);
+    return optimistic;
+  }
+  const index=rawDashboardNotificationStates.findIndex(row=>row.notification_key===key);
+  if(index>=0) rawDashboardNotificationStates[index]=result.data;
+  else rawDashboardNotificationStates.push(result.data);
+  return result.data;
+}
+
+function markDashboardNotificationsSeen(items){
+  const seenAt=new Date().toISOString();
+  items.forEach(item=>{
+    saveDashboardNotificationState(item,{seen_at:seenAt}).catch(error=>console.warn('Melding kon niet als gezien worden opgeslagen:',error.message));
+  });
+}
+
+function notificationCenterAllItems(){
+  return notificationItems(vastgoedData);
+}
+
+function notificationCenterVisibleItems(){
+  const all=notificationCenterAllItems();
+  let items=notificationCenterScope==='auto'
+    ? all.filter(item=>notificationCenterAutoKeys.has(dashboardNotificationKey(item)))
+    : all;
+  if(notificationCenterFilter==='urgent') items=items.filter(item=>item.sev==='danger');
+  if(notificationCenterFilter==='tenant') items=items.filter(item=>Boolean(item.reportId));
+  if(notificationCenterFilter==='automatic') items=items.filter(item=>!item.reportId);
+  return items;
+}
+
+function notificationCenterActionHtml(item){
+  const actions=[];
+  const report=item.reportId?rawTenantIssueReports.find(row=>row.id===item.reportId):null;
+  if(item.reportId){
+    actions.push(`<button type="button" class="notificationCenterAction primary tenantReportOpenBtn" data-report-id="${escAttr(item.reportId)}">Bekijken</button>`);
+    if(report&&tenantReportIsOpen(report)&&report.status!=='In behandeling') actions.push(`<button type="button" class="notificationCenterAction tenantReportStartBtn" data-report-id="${escAttr(item.reportId)}">In behandeling</button>`);
+    if(report&&tenantReportIsOpen(report)) actions.push(`<button type="button" class="notificationCenterAction complete tenantReportCompleteBtn" data-report-id="${escAttr(item.reportId)}">Afronden</button>`);
+  }else if(item.type==='Huurverhoging'&&item.objectId){
+    actions.push(`<button type="button" class="notificationCenterAction primary rentEditBtn" data-id="${escAttr(item.objectId)}">Huurverhoging openen</button>`);
+  }else if(item.taskId){
+    actions.push(`<button type="button" class="notificationCenterAction primary taskEditBtn" data-task-id="${escAttr(item.taskId)}">Taak openen</button>`);
+  }else if(item.objectId){
+    actions.push(`<button type="button" class="notificationCenterAction primary detailBtn" data-id="${escAttr(item.objectId)}">Object bekijken</button>`);
+  }
+  if(!notificationIsSnoozed(item)){
+    actions.push(`<button type="button" class="notificationCenterAction notificationSnoozeBtn" data-notification-key="${escAttr(dashboardNotificationKey(item))}">Herinner morgen</button>`);
+  }
+  return actions.join('');
+}
+
+function notificationCenterCardHtml(item){
+  const visual=notificationVisual(item);
+  const snoozed=notificationIsSnoozed(item);
+  const urgency=item.sev==='danger'?'Urgent':item.sev==='warning'?'Aandacht':'Nieuw';
+  return `<article class="notificationCenterCard notificationCenterCard--${visual.kind} ${snoozed?'is-snoozed':''}" data-notification-key="${escAttr(dashboardNotificationKey(item))}">
+    <div class="notificationCenterCardTop">
+      <span class="notificationCenterCardIcon" aria-hidden="true">${visual.icon}</span>
+      <div><span class="notificationCenterSource">${escHtml(visual.label)}</span><strong>${escHtml(item.title)}</strong></div>
+      <span class="notificationCenterUrgency notificationCenterUrgency--${escAttr(item.sev)}">${urgency}</span>
+    </div>
+    <p>${escHtml(item.text)}</p>
+    ${snoozed?'<div class="notificationCenterSnoozed">Herinnering staat gepland voor morgen om 08:00.</div>':''}
+    <div class="notificationCenterCardActions">${notificationCenterActionHtml(item)}</div>
+  </article>`;
+}
+
+function ensureNotificationCenterUi(){
+  if(!document.getElementById('dashboardNotificationCenterStyles')){
+    const style=document.createElement('style');
+    style.id='dashboardNotificationCenterStyles';
+    style.textContent=`
+      .dashboardNotificationBell{position:fixed;right:22px;top:18px;z-index:9000;width:48px;height:48px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.18);cursor:pointer;display:grid;place-items:center;font-size:22px}
+      .dashboardNotificationBell:hover{background:#f8fafc}.dashboardNotificationBell[hidden]{display:none}
+      .dashboardNotificationBellBadge{position:absolute;right:-4px;top:-5px;min-width:23px;height:23px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;border:2px solid #fff;font-size:11px;font-weight:900;display:grid;place-items:center}
+      .dashboardNotificationBellBadge.is-zero{background:#64748b}
+      .notificationCenterLayer{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;padding:18px;background:rgba(15,23,42,.62)}
+      .notificationCenterLayer.hidden{display:none}.notificationCenterCardShell{width:min(900px,100%);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:18px;box-shadow:0 28px 90px rgba(15,23,42,.4);overflow:hidden}
+      .notificationCenterHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+      .notificationCenterEyebrow{margin:0 0 4px;color:#475569;font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.notificationCenterHeader h2{margin:0;font-size:24px}.notificationCenterHeader p{margin:6px 0 0;color:#64748b}
+      .notificationCenterClose{border:0;background:#fff;width:38px;height:38px;border-radius:999px;font-size:24px;cursor:pointer;box-shadow:0 1px 5px rgba(15,23,42,.12)}
+      .notificationCenterSummary{display:flex;gap:9px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid #e2e8f0;background:#fff}
+      .notificationCenterFilter{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:8px 12px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}.notificationCenterFilter.active{background:#0f172a;color:#fff;border-color:#0f172a}
+      .notificationCenterBody{overflow:auto;padding:18px 24px 24px;display:grid;gap:12px;background:#f8fafc}
+      .notificationCenterCard{border:1px solid #e2e8f0;border-left:7px solid #64748b;border-radius:12px;background:#fff;padding:14px 16px;box-shadow:0 3px 12px rgba(15,23,42,.05)}
+      .notificationCenterCard--tenant{border-left-color:#2563eb;background:linear-gradient(90deg,#eff6ff 0,#fff 35%)}.notificationCenterCard--rent{border-left-color:#ea580c;background:linear-gradient(90deg,#fff7ed 0,#fff 35%)}
+      .notificationCenterCard--maintenance{border-left-color:#dc2626;background:linear-gradient(90deg,#fef2f2 0,#fff 35%)}.notificationCenterCard--task{border-left-color:#7c3aed;background:linear-gradient(90deg,#f5f3ff 0,#fff 35%)}
+      .notificationCenterCard.is-snoozed{opacity:.72}.notificationCenterCardTop{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px}.notificationCenterCardTop strong{display:block;margin-top:2px}
+      .notificationCenterCardIcon{width:34px;height:34px;border-radius:999px;background:#e2e8f0;display:grid;place-items:center;font-weight:900}.notificationCenterSource{display:block;color:#475569;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+      .notificationCenterUrgency{border-radius:999px;padding:5px 8px;font-size:11px;font-weight:900}.notificationCenterUrgency--danger{background:#fee2e2;color:#b91c1c}.notificationCenterUrgency--warning{background:#ffedd5;color:#c2410c}.notificationCenterUrgency--ok{background:#dcfce7;color:#166534}
+      .notificationCenterCard p{margin:11px 0;color:#334155;line-height:1.5}.notificationCenterCardActions{display:flex;gap:8px;flex-wrap:wrap}.notificationCenterAction{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
+      .notificationCenterAction.primary{background:#0f172a;color:#fff;border-color:#0f172a}.notificationCenterCard--tenant .notificationCenterAction.primary{background:#2563eb;border-color:#2563eb}.notificationCenterCard--rent .notificationCenterAction.primary{background:#ea580c;border-color:#ea580c}.notificationCenterAction.complete{background:#15803d;color:#fff;border-color:#15803d}
+      .notificationCenterSnoozed{margin:8px 0;padding:8px 10px;border-radius:8px;background:#f1f5f9;color:#475569;font-size:12px;font-weight:700}.notificationCenterEmpty{padding:34px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:12px}
+      .notificationCenterFooter{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:15px 24px;border-top:1px solid #e2e8f0;background:#fff}.notificationCenterFooter button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:9px 12px;font:inherit;font-weight:800;cursor:pointer}.notificationCenterFooter .primary{background:#0f172a;color:#fff;border-color:#0f172a}
+      @media(max-width:720px){.dashboardNotificationBell{right:12px;top:12px}.notificationCenterLayer{padding:6px}.notificationCenterCardShell{max-height:97vh;border-radius:12px}.notificationCenterHeader,.notificationCenterSummary,.notificationCenterBody,.notificationCenterFooter{padding-left:14px;padding-right:14px}.notificationCenterCardTop{grid-template-columns:auto 1fr}.notificationCenterUrgency{grid-column:2;justify-self:start}.notificationCenterFooter{flex-direction:column}.notificationCenterFooter button{width:100%}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  if(!document.getElementById('dashboardNotificationBell')){
+    const bell=document.createElement('button');
+    bell.id='dashboardNotificationBell';
+    bell.type='button';
+    bell.className='dashboardNotificationBell';
+    bell.setAttribute('aria-label','Dashboardmeldingen openen');
+    bell.innerHTML='<span aria-hidden="true">🔔</span><span id="dashboardNotificationBellBadge" class="dashboardNotificationBellBadge is-zero">0</span>';
+    bell.hidden=true;
+    document.body.appendChild(bell);
+  }
+
+  if(document.getElementById('notificationCenterModal')) return;
+  const modal=document.createElement('div');
+  modal.id='notificationCenterModal';
+  modal.className='notificationCenterLayer hidden';
+  modal.setAttribute('role','dialog');
+  modal.setAttribute('aria-modal','true');
+  modal.setAttribute('aria-labelledby','notificationCenterTitle');
+  modal.innerHTML=`<section class="notificationCenterCardShell">
+    <header class="notificationCenterHeader"><div><p class="notificationCenterEyebrow">Dashboardmeldingen</p><h2 id="notificationCenterTitle">Aandacht nodig</h2><p id="notificationCenterSubtitle">Alle openstaande aandachtspunten op één plek.</p></div><button type="button" class="notificationCenterClose" aria-label="Sluiten">×</button></header>
+    <div id="notificationCenterSummary" class="notificationCenterSummary"></div>
+    <div id="notificationCenterBody" class="notificationCenterBody"></div>
+    <footer class="notificationCenterFooter"><button type="button" id="notificationCenterPageBtn" class="primary">Open volledige meldingenpagina</button><button type="button" class="notificationCenterClose">Sluiten</button></footer>
+  </section>`;
+  document.body.appendChild(modal);
+
+  el('dashboardNotificationBell').addEventListener('click',()=>openNotificationCenter({scope:'all'}));
+  modal.addEventListener('click',event=>{
+    if(event.target===modal||event.target.closest('.notificationCenterClose')){
+      closeNotificationCenter();
+      return;
+    }
+    const filter=event.target.closest('.notificationCenterFilter');
+    if(filter){ notificationCenterFilter=filter.dataset.centerFilter||'all'; renderNotificationCenter(); return; }
+    const snooze=event.target.closest('.notificationSnoozeBtn');
+    if(snooze){ snoozeDashboardNotification(snooze.dataset.notificationKey); return; }
+    if(event.target.closest('#notificationCenterPageBtn')){
+      closeNotificationCenter();
+      const nav=[...document.querySelectorAll('.nav')].find(button=>norm(button.dataset.title||button.textContent).includes('melding'));
+      if(nav) nav.click();
+      return;
+    }
+    if(event.target.closest('.detailBtn,.rentEditBtn,.taskEditBtn,.tenantReportOpenBtn')) closeNotificationCenter();
+  });
+}
+
+function updateNotificationCenterBell(items=notificationCenterAllItems()){
+  ensureNotificationCenterUi();
+  const bell=el('dashboardNotificationBell');
+  const badge=el('dashboardNotificationBellBadge');
+  if(!bell||!badge) return;
+  const appVisible=el('appView')&&!el('appView').classList.contains('hidden');
+  bell.hidden=!appVisible;
+  const count=items.length;
+  badge.textContent=count>99?'99+':String(count);
+  badge.classList.toggle('is-zero',count===0);
+  const urgent=items.filter(item=>item.sev==='danger').length;
+  bell.title=count?`${count} openstaande meldingen, waarvan ${urgent} urgent`:'Geen openstaande meldingen';
+  bell.setAttribute('aria-label',bell.title);
+}
+
+function renderNotificationCenter(){
+  ensureNotificationCenterUi();
+  const all=notificationCenterAllItems();
+  const items=notificationCenterVisibleItems();
+  const urgent=all.filter(item=>item.sev==='danger').length;
+  const tenants=all.filter(item=>item.reportId).length;
+  const automatic=all.length-tenants;
+  el('notificationCenterTitle').textContent=notificationCenterScope==='auto'?'Nieuwe en actuele meldingen':'Alle openstaande meldingen';
+  el('notificationCenterSubtitle').textContent=notificationCenterScope==='auto'
+    ? 'Dit overzicht verschijnt maximaal één keer per dag. Sluiten rondt niets af.'
+    : 'Sluiten verbergt alleen deze pop-up; de onderliggende melding blijft openstaan.';
+  el('notificationCenterSummary').innerHTML=`
+    <button type="button" class="notificationCenterFilter ${notificationCenterFilter==='all'?'active':''}" data-center-filter="all">Alle (${notificationCenterScope==='auto'?notificationCenterAutoKeys.size:all.length})</button>
+    <button type="button" class="notificationCenterFilter ${notificationCenterFilter==='urgent'?'active':''}" data-center-filter="urgent">Urgent (${urgent})</button>
+    <button type="button" class="notificationCenterFilter ${notificationCenterFilter==='tenant'?'active':''}" data-center-filter="tenant">Huurders (${tenants})</button>
+    <button type="button" class="notificationCenterFilter ${notificationCenterFilter==='automatic'?'active':''}" data-center-filter="automatic">Dashboard (${automatic})</button>`;
+  el('notificationCenterBody').innerHTML=items.map(notificationCenterCardHtml).join('')||'<div class="notificationCenterEmpty"><strong>Geen meldingen binnen dit filter.</strong><br>Afgeronde of opgeloste onderwerpen verdwijnen automatisch uit dit overzicht.</div>';
+}
+
+function openNotificationCenter({scope='all',items=null}={}){
+  ensureNotificationCenterUi();
+  notificationCenterScope=scope;
+  notificationCenterFilter='all';
+  if(scope==='auto'){
+    const popupItems=items||notificationCenterAllItems().filter(notificationNeedsAutoPopup);
+    notificationCenterAutoKeys=new Set(popupItems.map(dashboardNotificationKey));
+    markDashboardNotificationsSeen(popupItems);
+  }else{
+    notificationCenterAutoKeys=new Set();
+  }
+  renderNotificationCenter();
+  el('notificationCenterModal').classList.remove('hidden');
+}
+
+function closeNotificationCenter(){
+  el('notificationCenterModal')?.classList.add('hidden');
+}
+
+async function snoozeDashboardNotification(key){
+  const item=notificationCenterAllItems().find(row=>dashboardNotificationKey(row)===key);
+  if(!item) return;
+  try{
+    await saveDashboardNotificationState(item,{seen_at:new Date().toISOString(),snoozed_until:tomorrowReminderIso()});
+    renderNotificationCenter();
+  }catch(error){
+    console.error(error);
+    alert('Herinnering opslaan mislukt: '+error.message);
+  }
+}
+
+function maybeOpenDashboardNotificationOverview(){
+  ensureNotificationCenterUi();
+  updateNotificationCenterBell();
+  if(notificationCenterAutoHandled) return;
+  notificationCenterAutoHandled=true;
+  const items=notificationCenterAllItems().filter(notificationNeedsAutoPopup);
+  if(!items.length) return;
+  window.setTimeout(()=>{
+    if(el('appView')&&!el('appView').classList.contains('hidden')) openNotificationCenter({scope:'auto',items});
+  },450);
 }
 
 function notificationVisual(n){
@@ -6326,6 +6659,8 @@ function render(){
   if(el('tenantReportTabCount')) el('tenantReportTabCount').textContent=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
   el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
+  updateNotificationCenterBell(notes);
+  if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
   el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard"><h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn issueQrBtn" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
   refreshPhotos();
   renderContractOverview(contractPageData);
@@ -6597,6 +6932,7 @@ function init(){
   if(el('rememberLogin')) el('rememberLogin').checked=rememberLoginEnabled();
   initSidebar();
   ensureTenantReportUi();
+  ensureNotificationCenterUi();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
