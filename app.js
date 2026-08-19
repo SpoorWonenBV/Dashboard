@@ -6734,6 +6734,7 @@ function setupContractStickyHeader(){
   updateContractStickyHeader=()=>{};
 
   if(!table||!wrap||!contractsPage) return;
+  if(window.matchMedia('(max-width: 1240px)').matches) return;
 
   const sourceHeader=table.querySelector('tr');
   if(!sourceHeader) return;
@@ -6862,12 +6863,36 @@ function render(){
   renderContractOverview(contractPageData);
   renderFinancialPage(data);
   renderAgenda(data);
-  el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Oorspr. einddatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+contractPageData.map(r=>{
+  el('contractTable').innerHTML=`<tr><th>Object & huurder</th><th>Status</th><th>Contractperiode</th><th>Opzegging</th><th>Verlenging</th><th>Actie</th></tr>`+contractPageData.map(r=>{
     const originalEnd=r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract);
-    const renewalCount=r.aantal_verlengingen?`<span class="subtle">${r.aantal_verlengingen}× toegepast</span>`:'';
-    const mismatch=r.opzegdatum_afwijking?`<span class="contractWarning">Wijkt af van berekende datum</span>`:'';
     const hasContract=Boolean(r.contract?.id);
-    return `<tr><td><strong>${r.object}</strong><span class="subtle">${r.straatnaam} ${r.huisnummer}</span></td><td>${r.huurder}</td><td>${statusBadge(hasContract?[r.contract_status,r.contract_opgezegd?'warning':'ok']:['Geen contract','danger'])}</td><td>${hasContract?dateFmt(r.startdatum_contract):'-'}</td><td>${hasContract?originalEnd:'-'}</td><td>${hasContract?contractEndDisplay(r):'-'}${hasContract?renewalCount:''}</td><td>${hasContract?contractPeriodText(r):'-'}</td><td>${hasContract?(r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))+mismatch:'-'}</td><td>${hasContract?renewalText(r):'-'}</td><td>${statusBadge(hasContract?r.status_opzeg:['Geen contract','danger'])}</td><td><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td></tr>`;
+    const contractStatus=hasContract?statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']):statusBadge(['Geen contract','danger']);
+    const noticeStatus=statusBadge(hasContract?r.status_opzeg:['Geen contract','danger']);
+    const address=[r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' ');
+    const tenant=r.huurder&&r.huurder!=='-'?r.huurder:'Geen huurder';
+    const periodHtml=hasContract
+      ? (r.contract_onbepaalde
+        ? `<strong>Onbepaalde tijd</strong><span class="contractCellMeta">Start ${dateFmt(r.startdatum_contract)}</span>`
+        : `<strong>${dateFmt(r.startdatum_contract)} → ${contractEndDisplay(r)}</strong><span class="contractCellMeta">${r.aantal_verlengingen?`Oorspronkelijk ${originalEnd} · ${r.aantal_verlengingen}× verlengd`:`Oorspronkelijk einde ${originalEnd}`}</span>`)
+      : '<span class="contractCellEmpty">Geen contract gekoppeld</span>';
+    const noticeHtml=hasContract
+      ? (r.contract_onbepaalde
+        ? `<strong>Niet van toepassing</strong><span class="contractCellMeta">Opzegtermijn ${contractPeriodText(r)}</span>${noticeStatus}`
+        : `<strong>Uiterlijk ${dateFmt(r.opzegdatum)}</strong><span class="contractCellMeta">Opzegtermijn ${contractPeriodText(r)}</span>${r.opzegdatum_afwijking?'<span class="contractWarning">Wijkt af van berekende datum</span>':''}${noticeStatus}`)
+      : noticeStatus;
+    const renewalHtml=hasContract
+      ? (r.contract_onbepaalde
+        ? '<span class="contractCellEmpty">Niet van toepassing</span>'
+        : `<strong>${renewalText(r)}</strong>${r.aantal_verlengingen?`<span class="contractCellMeta">${r.aantal_verlengingen}× toegepast</span>`:'<span class="contractCellMeta">Nog niet toegepast</span>'}`)
+      : '<span class="contractCellEmpty">-</span>';
+    return `<tr class="contractResponsiveRow">
+      <td data-label="Object & huurder"><strong>${escHtml(r.object)}</strong><span class="contractCellMeta">${escHtml(address||'-')}</span><span class="contractTenantLine">${escHtml(tenant)}</span></td>
+      <td data-label="Status">${contractStatus}</td>
+      <td data-label="Contractperiode" class="contractPeriodCell">${periodHtml}</td>
+      <td data-label="Opzegging" class="contractNoticeCell">${noticeHtml}</td>
+      <td data-label="Verlenging" class="contractRenewalCell">${renewalHtml}</td>
+      <td data-label="Actie" class="contractActionCell"><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td>
+    </tr>`;
   }).join('');
   setupContractStickyHeader();
   if(el('maintenanceOverview')) renderMaintenanceOverview(data);
@@ -7226,7 +7251,17 @@ function ensurePremiumDashboardUi(){
     form h3{font-size:15px!important;letter-spacing:-.01em;color:var(--ui-text);border-top-color:var(--ui-border)!important}
 
     .contractTablePanel,.financialTablePanel{padding:0!important}
-    .contractTableWrap,.financialTableWrap,.notificationLogWrap{border-radius:var(--ui-radius);overflow:auto;background:#fff}
+    .contractTableWrap{border-radius:var(--ui-radius);overflow:visible!important;background:#fff}
+    .financialTableWrap,.notificationLogWrap{border-radius:var(--ui-radius);overflow:auto;background:#fff}
+    #contractTable{width:100%!important;min-width:0!important;table-layout:fixed;border-collapse:separate;border-spacing:0}
+    #contractTable th:nth-child(1){width:20%}#contractTable th:nth-child(2){width:13%}#contractTable th:nth-child(3){width:21%}#contractTable th:nth-child(4){width:22%}#contractTable th:nth-child(5){width:16%}#contractTable th:nth-child(6){width:8%}
+    #contractTable th,#contractTable td{white-space:normal!important;overflow-wrap:anywhere;word-break:normal}
+    #contractTable td{font-size:12px;line-height:1.4}
+    #contractTable td>strong{display:block;color:var(--ui-text);font-size:12.5px;line-height:1.35}
+    .contractCellMeta,.contractTenantLine,.contractCellEmpty{display:block;margin-top:4px;color:var(--ui-muted);font-size:11px;line-height:1.35}
+    .contractTenantLine{color:#334155;font-weight:750}
+    .contractNoticeCell .badge{display:inline-flex;margin-top:7px}.contractNoticeCell .contractWarning{display:block;margin-top:6px}
+    .contractActionCell{text-align:right}.contractActionCell .miniLink{white-space:nowrap!important}
     table{font-variant-numeric:tabular-nums}
     th{padding:13px 14px!important;background:#f8fafc;color:#526174!important;font-size:11px!important;font-weight:800!important;letter-spacing:.045em;text-transform:uppercase;border-bottom:1px solid var(--ui-border)!important;white-space:nowrap}
     td{padding:14px!important;border-bottom:1px solid #edf1f5!important;vertical-align:middle}
@@ -7493,6 +7528,21 @@ function ensureProfessionalUx(){
       .contractTableWrap,.financialTableWrap,.notificationLogWrap,.maintenanceObjectTableWrap{scrollbar-gutter:stable}
       .contractTableWrap::-webkit-scrollbar,.financialTableWrap::-webkit-scrollbar,.notificationLogWrap::-webkit-scrollbar,.maintenanceObjectTableWrap::-webkit-scrollbar{height:10px}.contractTableWrap::-webkit-scrollbar-thumb,.financialTableWrap::-webkit-scrollbar-thumb,.notificationLogWrap::-webkit-scrollbar-thumb,.maintenanceObjectTableWrap::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px;border:2px solid #fff}
       .professionalMobileNav{display:none}
+      @media(max-width:1240px){
+        .contractTablePanel{background:transparent!important;border:0!important;box-shadow:none!important}
+        .contractTableWrap{overflow:visible!important;background:transparent!important}
+        #contractTable{display:block!important;width:100%!important;min-width:0!important;background:transparent!important}
+        #contractTable tbody{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        #contractTable tr:first-child{display:none!important}
+        #contractTable .contractResponsiveRow{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;border:1px solid #dce4ed;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.03)}
+        #contractTable .contractResponsiveRow td{position:relative;display:block!important;width:auto!important;min-width:0!important;padding:12px 14px 12px 118px!important;border-bottom:1px solid #edf1f5!important;background:#fff!important;text-align:left!important}
+        #contractTable .contractResponsiveRow td::before{content:attr(data-label);position:absolute;left:14px;top:13px;width:92px;color:#64748b;font-size:10px;font-weight:850;letter-spacing:.045em;text-transform:uppercase;line-height:1.3}
+        #contractTable .contractResponsiveRow td:nth-last-child(1){border-bottom:0!important}
+        #contractTable .contractResponsiveRow .contractActionCell{grid-column:1/-1;padding-left:14px!important;text-align:right!important;background:#fbfcfd!important}
+        #contractTable .contractResponsiveRow .contractActionCell::before{display:none}
+        #contractTable .contractResponsiveRow .contractActionCell .miniLink{width:100%;min-height:40px!important}
+        .contractFloatingHeader{display:none!important}
+      }
       @media(max-width:900px){
         body{padding-bottom:calc(var(--pro-bottom-nav-height) + env(safe-area-inset-bottom,0px))!important}
         .professionalMobileNav{position:fixed;left:8px;right:8px;bottom:8px;z-index:9990;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;min-height:64px;padding:6px;border:1px solid rgba(203,213,225,.9);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 14px 45px rgba(15,23,42,.2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
@@ -7501,6 +7551,11 @@ function ensureProfessionalUx(){
         .dashboardAttentionFooter{align-items:flex-start;flex-direction:column}.dashboardAttentionAllBtn{width:100%}
         .modalCard .formActions{padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))!important}
         .dashboardNotificationBell.dashboardNotificationBell--inline{width:42px!important;height:42px!important;min-width:42px!important}
+      }
+      @media(max-width:760px){
+        #contractTable tbody{grid-template-columns:1fr}
+        #contractTable .contractResponsiveRow{grid-template-columns:1fr}
+        #contractTable .contractResponsiveRow .contractActionCell{grid-column:1}
       }
       @media(max-width:520px){
         .professionalDashboardCommandBar{padding:14px}.professionalQuickActions{grid-template-columns:1fr}.professionalQuickBtn:first-child{grid-column:auto}.main>header{gap:12px}.headerActions{width:100%}.headerActions>button:not(.dashboardNotificationBell){flex:1 1 auto}
