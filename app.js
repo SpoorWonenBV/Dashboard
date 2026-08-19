@@ -6688,6 +6688,7 @@ function render(){
     ? dashboardAttentionHtml+dashboardAttentionMore
     : '<div class="professionalEmptyState"><strong>Alles is bijgewerkt</strong><span>Er zijn op dit moment geen openstaande aandachtspunten.</span></div>';
   updateProfessionalDashboardSummary(notes);
+  updateSimpleSmartDashboard(notes);
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   updateNotificationCenterBell(notes);
   if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
@@ -7352,6 +7353,218 @@ function ensureProfessionalUx(){
   if(active?.id) syncProfessionalNavigation(active.id);
 }
 
+
+
+/* v40.42.8 — Eenvoudige, esthetische en slimme werklaag */
+function simpleSmartIcon(name){
+  const icons={
+    spark:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.3 4.2L17.5 9l-4.2 1.3L12 14.5l-1.3-4.2L6.5 9l4.2-1.8L12 3z"></path><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"></path></svg>',
+    check:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19.2 6.8"></path></svg>',
+    clock:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3.2 2"></path></svg>',
+    tenant:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"></circle><path d="M5.5 19c.8-3.5 3-5.2 6.5-5.2s5.7 1.7 6.5 5.2"></path></svg>',
+    contract:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l3 3V20H7z"></path><path d="M14 3.5V7h3M9.5 11h5M9.5 14.5h5"></path></svg>',
+    money:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M15.5 8.5h-3.2a3.5 3.5 0 0 0 0 7h3.2M8.5 11h5M8.5 14h4.5"></path></svg>',
+    tool:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.1a4.1 4.1 0 0 0-5.2 5.2L4.7 16a2.1 2.1 0 0 0 3 3l4.6-4.6a4.1 4.1 0 0 0 5.2-5.2l-2.6 2.6-2.7-2.7 2.3-3z"></path></svg>',
+    bell:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 5 2 5.6 2 7h-15c0-1.4 2-2 2-7z"></path><path d="M9.5 19a2.8 2.8 0 0 0 5 0"></path></svg>',
+    task:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"></rect><path d="m8.5 11 2 2 4-4M8.5 16h6"></path></svg>',
+    arrow:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M14 8l4 4-4 4"></path></svg>'
+  };
+  return icons[name]||icons.spark;
+}
+
+function simpleSmartItemIcon(item){
+  if(item.reportId) return 'tenant';
+  if(item.taskId||item.type==='Taak') return 'task';
+  if(item.type==='Huurverhoging') return 'money';
+  if(['Onderhoud','Keuring','Energielabel'].includes(item.type)) return 'tool';
+  if(['Contract','Contractcontrole','Contractverlenging','Opzegdatum','Opzegging'].includes(item.type)) return 'contract';
+  return 'bell';
+}
+
+function simpleSmartRank(item){
+  let rank=item.sev==='danger'?0:item.sev==='warning'?100:200;
+  const title=norm(`${item.title||''} ${item.text||''}`);
+  if(item.reportId){
+    const report=rawTenantIssueReports.find(row=>row.id===item.reportId);
+    if(report?.urgency==='Spoed') rank-=45;
+    else if(report?.urgency==='Hoog') rank-=20;
+    else rank-=5;
+  }
+  if(title.includes('vandaag')||title.includes('verlopen')||title.includes('te laat')) rank-=35;
+  if(title.includes('binnen 30 dagen')||title.includes('deze maand')) rank-=20;
+  if(item.type==='Opzegdatum') rank-=12;
+  if(item.type==='Huurverhoging') rank-=8;
+  return rank;
+}
+
+function simpleSmartLevel(item){
+  const text=norm(`${item.title||''} ${item.text||''}`);
+  if(item.sev==='danger'||text.includes('vandaag')||text.includes('verlopen')||text.includes('te laat')) return {label:'Nu doen',tone:'danger'};
+  if(item.reportId) return {label:'Nieuw',tone:'info'};
+  if(item.sev==='warning') return {label:'Binnenkort',tone:'warning'};
+  return {label:'Controleren',tone:'neutral'};
+}
+
+function simpleSmartObject(item){
+  const property=item.objectId?getPropertyById(item.objectId):null;
+  return property?.object||'';
+}
+
+function simpleSmartPlainTitle(item){
+  const object=simpleSmartObject(item);
+  const suffix=object?` · ${object}`:'';
+  if(item.reportId) return `Bekijk de melding van de huurder${suffix}`;
+  if(item.type==='Huurverhoging') return `Bereid de huurverhoging voor${suffix}`;
+  if(item.type==='Opzegdatum') return `Controleer of het contract moet worden opgezegd${suffix}`;
+  if(item.type==='Opzegging') return `Controleer het opgezegde contract${suffix}`;
+  if(item.type==='Contractverlenging') return `Controleer het automatisch verlengde contract${suffix}`;
+  if(item.type==='Contract'||item.type==='Contractcontrole') return `Controleer het contract${suffix}`;
+  if(item.type==='Onderhoud') return `Plan of controleer het onderhoud${suffix}`;
+  if(item.type==='Keuring') return `Plan of controleer de keuring${suffix}`;
+  if(item.type==='Energielabel') return `Controleer het energielabel${suffix}`;
+  if(item.type==='Leegstand') return `Controleer de leegstand${suffix}`;
+  if(item.taskId){
+    const task=rawTasks.find(row=>row.id===item.taskId);
+    return task?.title?`Doe taak: ${task.title}`:`Open de taak`;
+  }
+  return item.title||'Controleer deze melding';
+}
+
+function simpleSmartPrimaryAction(item){
+  if(item.reportId) return `<button type="button" class="simpleSmartPrimary tenantReportOpenBtn" data-report-id="${escAttr(item.reportId)}">Bekijk melding ${simpleSmartIcon('arrow')}</button>`;
+  if(item.type==='Huurverhoging'&&item.objectId) return `<button type="button" class="simpleSmartPrimary rentEditBtn" data-id="${escAttr(item.objectId)}">Start huurverhoging ${simpleSmartIcon('arrow')}</button>`;
+  if(item.taskId) return `<button type="button" class="simpleSmartPrimary taskEditBtn" data-task-id="${escAttr(item.taskId)}">Open taak ${simpleSmartIcon('arrow')}</button>`;
+  if(item.objectId) return `<button type="button" class="simpleSmartPrimary detailBtn" data-id="${escAttr(item.objectId)}">Open object ${simpleSmartIcon('arrow')}</button>`;
+  return `<button type="button" class="simpleSmartPrimary" data-simple-smart-all="true">Bekijk meldingen ${simpleSmartIcon('arrow')}</button>`;
+}
+
+function simpleSmartSecondaryAction(item){
+  if(item.reportId){
+    const report=rawTenantIssueReports.find(row=>row.id===item.reportId);
+    if(report&&tenantReportIsOpen(report)&&report.status!=='In behandeling') return `<button type="button" class="simpleSmartSecondary tenantReportStartBtn" data-report-id="${escAttr(item.reportId)}">Zet in behandeling</button>`;
+    return '';
+  }
+  if(item.taskId) return '';
+  const key=dashboardNotificationKey(item);
+  return `<button type="button" class="simpleSmartSecondary simpleSmartTaskBtn" data-notification-key="${escAttr(key)}">Maak taak</button>`;
+}
+
+function simpleSmartActionCard(item,index){
+  const level=simpleSmartLevel(item);
+  const icon=simpleSmartItemIcon(item);
+  return `<article class="simpleSmartActionCard simpleSmartActionCard--${level.tone}">
+    <div class="simpleSmartStep" aria-hidden="true">${index+1}</div>
+    <div class="simpleSmartActionIcon" aria-hidden="true">${simpleSmartIcon(icon)}</div>
+    <div class="simpleSmartActionBody">
+      <div class="simpleSmartActionMeta"><span class="simpleSmartLevel simpleSmartLevel--${level.tone}">${escHtml(level.label)}</span><span>${escHtml(item.type||'Melding')}</span></div>
+      <h3>${escHtml(simpleSmartPlainTitle(item))}</h3>
+      <p><strong>Waarom?</strong> ${escHtml(item.text||item.title||'Dit onderdeel vraagt aandacht.')}</p>
+      <div class="simpleSmartActionButtons">${simpleSmartPrimaryAction(item)}${simpleSmartSecondaryAction(item)}</div>
+    </div>
+  </article>`;
+}
+
+function simpleSmartDueDate(item){
+  const base=new Date(`${isoToday()}T12:00:00`);
+  const add=item.sev==='danger'?0:7;
+  base.setDate(base.getDate()+add);
+  return `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}-${String(base.getDate()).padStart(2,'0')}`;
+}
+
+function openSimpleSmartTask(notificationKey){
+  const item=notificationItems(filtered()).find(row=>dashboardNotificationKey(row)===notificationKey);
+  if(!item) return;
+  openTaskModal('',item.objectId||'');
+  const title=el('taskTitle');
+  const priority=el('taskPriority');
+  const due=el('taskDueDate');
+  const description=el('taskDescription');
+  if(title) title.value=simpleSmartPlainTitle(item).replace(/^Doe taak:\s*/,'').slice(0,140);
+  if(priority) priority.value=item.sev==='danger'?'Urgent':'Hoog';
+  if(due) due.value=simpleSmartDueDate(item);
+  if(description) description.value=`Automatisch voorbereid vanuit het dashboard.\n\n${item.title||''}\n${item.text||''}`.trim();
+}
+
+function ensureSimpleSmartDashboardUi(){
+  if(!document.getElementById('simpleSmartUxStyles')){
+    const style=document.createElement('style');
+    style.id='simpleSmartUxStyles';
+    style.textContent=`
+      :root{--simple-bg:#f5f7fa;--simple-card:#fff;--simple-text:#172033;--simple-muted:#667085;--simple-line:#e4e9ef}
+      .main{background:var(--simple-bg)!important}
+      .page>h1,.main>header h1{letter-spacing:-.035em!important;color:var(--simple-text)!important}
+      .panel,.card,.objectCard{border-color:var(--simple-line)!important}
+      .panel{box-shadow:0 1px 2px rgba(16,24,40,.025)!important}
+      .simpleSmartPanel{margin:0 0 20px;border:1px solid #dce4ed;border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(16,24,40,.055);overflow:hidden}
+      .simpleSmartPanelHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;background:linear-gradient(135deg,#ffffff 0%,#f8fafc 100%);border-bottom:1px solid #edf1f5}
+      .simpleSmartHeading{display:flex;align-items:flex-start;gap:13px}.simpleSmartHeadingIcon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:12px;background:#eef6ff;color:#175cd3}.simpleSmartHeadingIcon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+      .simpleSmartEyebrow{display:block;margin:0 0 3px;font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#175cd3}.simpleSmartPanel h2{margin:0;font-size:20px;line-height:1.25;letter-spacing:-.025em;color:#172033}.simpleSmartPanelHeader p{margin:5px 0 0;max-width:680px;color:#667085;font-size:13px;line-height:1.5}
+      .simpleSmartAutoBadge{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;padding:8px 10px;border:1px solid #bbdfc7;border-radius:999px;background:#f1fbf4;color:#15703d;font-size:11px;font-weight:850;white-space:nowrap}.simpleSmartAutoBadge svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .simpleSmartActionList{display:grid;gap:10px;padding:16px 18px 18px}.simpleSmartActionCard{display:grid;grid-template-columns:34px 44px minmax(0,1fr);gap:12px;align-items:start;padding:14px;border:1px solid #e4e9ef;border-radius:14px;background:#fff;transition:box-shadow .15s ease,border-color .15s ease,transform .15s ease}.simpleSmartActionCard:hover{border-color:#cfd8e3;box-shadow:0 6px 18px rgba(16,24,40,.06);transform:translateY(-1px)}
+      .simpleSmartActionCard--danger{border-left:4px solid #d92d20}.simpleSmartActionCard--warning{border-left:4px solid #f79009}.simpleSmartActionCard--info{border-left:4px solid #2e90fa}.simpleSmartActionCard--neutral{border-left:4px solid #98a2b3}
+      .simpleSmartStep{display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:#172033;color:#fff;font-size:12px;font-weight:900}.simpleSmartActionIcon{display:grid;place-items:center;width:42px;height:42px;border-radius:11px;background:#f2f4f7;color:#344054}.simpleSmartActionIcon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+      .simpleSmartActionBody{min-width:0}.simpleSmartActionMeta{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:#98a2b3;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.simpleSmartLevel{padding:3px 7px;border-radius:999px;letter-spacing:0;text-transform:none}.simpleSmartLevel--danger{background:#fff1f0;color:#b42318}.simpleSmartLevel--warning{background:#fffaeb;color:#b54708}.simpleSmartLevel--info{background:#eff8ff;color:#175cd3}.simpleSmartLevel--neutral{background:#f2f4f7;color:#475467}
+      .simpleSmartActionBody h3{margin:0;color:#172033;font-size:15px;line-height:1.35;letter-spacing:-.012em}.simpleSmartActionBody p{margin:5px 0 0;color:#667085;font-size:12px;line-height:1.5}.simpleSmartActionBody p strong{color:#475467}.simpleSmartActionButtons{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}.simpleSmartPrimary,.simpleSmartSecondary{min-height:38px!important;padding:8px 11px!important;border-radius:9px!important;font-size:11px!important;font-weight:850!important}.simpleSmartPrimary{display:inline-flex!important;align-items:center;gap:7px;border:1px solid var(--brand-primary)!important;background:var(--brand-primary)!important;color:#fff!important}.simpleSmartPrimary svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.simpleSmartSecondary{border:1px solid #d0d5dd!important;background:#fff!important;color:#344054!important}
+      .simpleSmartClear{display:grid;place-items:center;gap:8px;padding:28px 18px;text-align:center}.simpleSmartClearIcon{display:grid;place-items:center;width:48px;height:48px;border-radius:999px;background:#ecfdf3;color:#067647}.simpleSmartClearIcon svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.simpleSmartClear strong{color:#05603a;font-size:16px}.simpleSmartClear span{color:#667085;font-size:12px}
+      .simpleSmartAutomation{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;padding:15px 20px;border-top:1px solid #edf1f5;background:#fafbfc}.simpleSmartAutomationTitle{display:flex;align-items:center;gap:8px;color:#344054;font-size:11px;font-weight:900;white-space:nowrap}.simpleSmartAutomationTitle svg{width:17px;height:17px;fill:none;stroke:#175cd3;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.simpleSmartAutomationPills{display:flex;gap:7px;flex-wrap:wrap}.simpleSmartAutomationPill{padding:5px 8px;border:1px solid #e4e7ec;border-radius:999px;background:#fff;color:#667085;font-size:10px;font-weight:750}
+      #dashboard>.cards{gap:10px!important}#dashboard>.cards .card{min-height:94px!important;padding:15px!important;border-radius:13px!important;background:#fff!important}#dashboard>.cards .card span{font-size:11px!important;color:#667085!important}#dashboard>.cards .card strong{margin-top:5px!important;font-size:27px!important;letter-spacing:-.04em!important;color:#101828!important}
+      .sidebar{box-shadow:1px 0 0 rgba(16,24,40,.06)!important}.nav{border-radius:9px!important;margin:2px 8px!important}.nav.active{box-shadow:inset 3px 0 0 var(--brand-accent)!important}
+      .objectCardActions{gap:7px!important}.smallBtn,.miniLink{font-weight:800!important}
+      @media(max-width:900px){.simpleSmartPanelHeader{padding:18px;flex-direction:column}.simpleSmartAutoBadge{align-self:flex-start}.simpleSmartActionList{padding:12px}.simpleSmartActionCard{grid-template-columns:30px 38px minmax(0,1fr);padding:12px;gap:9px}.simpleSmartActionIcon{width:38px;height:38px}.simpleSmartAutomation{grid-template-columns:1fr}.simpleSmartAutomationTitle{white-space:normal}.simpleSmartActionButtons{display:grid;grid-template-columns:1fr}.simpleSmartPrimary,.simpleSmartSecondary{width:100%;justify-content:center}.professionalDashboardCommandBar{border-radius:16px!important}}
+      @media(max-width:520px){.simpleSmartStep{width:27px;height:27px}.simpleSmartActionCard{grid-template-columns:27px minmax(0,1fr)}.simpleSmartActionIcon{display:none}.simpleSmartPanel h2{font-size:18px}.simpleSmartPanelHeader p{font-size:12px}#dashboard>.cards .card{min-height:82px!important}.simpleSmartAutomationPills{display:grid;grid-template-columns:1fr 1fr}.simpleSmartAutomationPill{text-align:center}}
+      @media(prefers-reduced-motion:reduce){.simpleSmartActionCard{transition:none}.simpleSmartActionCard:hover{transform:none}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const dashboard=el('dashboard');
+  if(dashboard&&!document.getElementById('simpleSmartPanel')){
+    const panel=document.createElement('section');
+    panel.id='simpleSmartPanel';
+    panel.className='simpleSmartPanel';
+    panel.innerHTML=`
+      <header class="simpleSmartPanelHeader">
+        <div class="simpleSmartHeading"><span class="simpleSmartHeadingIcon">${simpleSmartIcon('spark')}</span><div><span class="simpleSmartEyebrow">Slim actieplan</span><h2>Wat moet ik nu doen?</h2><p>Het dashboard zet automatisch de belangrijkste acties bovenaan. Je hoeft dus niet zelf alle pagina's te controleren.</p></div></div>
+        <span class="simpleSmartAutoBadge">${simpleSmartIcon('check')} Automatisch bijgewerkt</span>
+      </header>
+      <div id="simpleSmartActionList" class="simpleSmartActionList"></div>
+      <div class="simpleSmartAutomation"><div class="simpleSmartAutomationTitle">${simpleSmartIcon('spark')} Automatisch bewaakt</div><div class="simpleSmartAutomationPills"><span class="simpleSmartAutomationPill">Contractdeadlines</span><span class="simpleSmartAutomationPill">Automatische verlengingen</span><span class="simpleSmartAutomationPill">Huurverhogingen</span><span class="simpleSmartAutomationPill">Onderhoud & keuringen</span><span class="simpleSmartAutomationPill">Energielabels</span><span class="simpleSmartAutomationPill">Huurdersmeldingen</span></div></div>`;
+    const command=el('professionalDashboardCommandBar');
+    if(command) command.insertAdjacentElement('afterend',panel);
+    else dashboard.prepend(panel);
+  }
+
+  if(!window.__simpleSmartActionsBound){
+    window.__simpleSmartActionsBound=true;
+    document.body.addEventListener('click',event=>{
+      const taskBtn=event.target.closest('.simpleSmartTaskBtn');
+      if(taskBtn){event.preventDefault();openSimpleSmartTask(taskBtn.dataset.notificationKey);return;}
+      if(event.target.closest('[data-simple-smart-all]')){event.preventDefault();openNotificationCenter({scope:'all'});}
+    });
+  }
+
+  const attentionPanel=el('attentionList')?.closest('.panel');
+  if(attentionPanel){
+    const heading=attentionPanel.querySelector('h2');
+    if(heading) heading.textContent='Alle aandachtspunten';
+    const intro=attentionPanel.querySelector('.premiumPanelIntro');
+    if(intro) intro.textContent='Hier vind je de volledige lijst. Bovenaan staat al wat als eerste moet gebeuren.';
+  }
+}
+
+function updateSimpleSmartDashboard(notes=[]){
+  ensureSimpleSmartDashboardUi();
+  const target=el('simpleSmartActionList');
+  if(!target) return;
+  const sorted=[...notes].sort((a,b)=>simpleSmartRank(a)-simpleSmartRank(b));
+  const top=sorted.slice(0,3);
+  if(!top.length){
+    target.innerHTML=`<div class="simpleSmartClear"><span class="simpleSmartClearIcon">${simpleSmartIcon('check')}</span><strong>Je hoeft nu niets te doen</strong><span>Het dashboard blijft deadlines, meldingen en onderhoud automatisch controleren.</span></div>`;
+    return;
+  }
+  target.innerHTML=top.map(simpleSmartActionCard).join('');
+}
+
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
@@ -7363,6 +7576,7 @@ function init(){
   ensureNotificationCenterUi();
   ensurePremiumDashboardUi();
   ensureProfessionalUx();
+  ensureSimpleSmartDashboardUi();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
