@@ -2870,6 +2870,8 @@ function setPage(pageId, title){
     renderFinancialPage(filtered());
     setFinancialTab(activeFinancialTab);
   }
+  if(pageId==='actiecentrum') renderActionCenter(filtered(),notificationItems(filtered()));
+  if(pageId==='agenda'||pageId==='kalender') renderAgenda(filtered());
 
   updateUxPageContextV404215(pageId);
   requestAnimationFrame(()=>updateContractStickyHeader());
@@ -6573,21 +6575,20 @@ function buildAgendaEvents(data){
     if(r.scope_inspectie_geldig_tot){
       addAgendaEvent(events,{date:r.scope_inspectie_geldig_tot,type:'inspection',title:'Scope/inspectie',subtitle:objectLine,objectId:r.id},seen);
     }
-    const monthIndex=monthMap[norm(r.maand_huurverhoging)];
-    if(monthIndex!==undefined){
-      years.forEach(year=>{
-        addAgendaEvent(events,{
-          date:agendaIsoFromDate(new Date(year,monthIndex,1)),
-          type:'finance',
-          title:'Huurverhoging',
-          subtitle:objectLine,
-          objectId:r.id
-        },seen);
-      });
+    const nextRentIncrease=rentIncreaseEffectiveDate(r);
+    if(nextRentIncrease){
+      addAgendaEvent(events,{
+        date:nextRentIncrease,
+        type:'finance',
+        title:'Huurverhoging',
+        subtitle:objectLine,
+        objectId:r.id
+      },seen);
     }
   });
 
-  maintenanceSourceRows(data).forEach(row=>{
+  const agendaAllowedIds=new Set(data.map(item=>item.id));
+  maintenanceSourceRows(data).filter(row=>agendaAllowedIds.has(row.objectId)).forEach(row=>{
     const objectLine=[row.object,row.address].filter(Boolean).join(' · ');
     if(row.done_date){
       addAgendaEvent(events,{
@@ -6853,6 +6854,7 @@ function render(){
   updateProfessionalDashboardSummary(notes);
   updateSimpleSmartDashboard(notes);
   updateUxDashboardV404215(notes);
+  renderActionCenter(data,notes);
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<div class="uxEmptyFriendly"><strong>Geen openstaande meldingen</strong><span>Alles binnen dit filter is bijgewerkt.</span></div>';
   updateNotificationCenterBell(notes);
   if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
@@ -6969,7 +6971,7 @@ function renderDetail(id){
   selectedPropertyId=id; const r=vastgoedData.find(x=>x.id===id); if(!r){ el('detailContent').innerHTML='<p>Object niet gevonden.</p>'; return; }
   const scope10=objectInspectionSummary(r.id,'SCOPE 10');
   const scope12=objectInspectionSummary(r.id,'SCOPE 12');
-  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn issueQrBtn" data-id="${r.id}">QR-code melding</button><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)}${r.contract_opgezegd?'. Het contract is binnen deze verlengde periode opgezegd.':` en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.`}</div>`:''}</section><section class="detailSection fullSpan"><h3>Huurdersmeldingen</h3>${tenantReportsForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn issueQrBtn" data-id="${r.id}">QR-code melding</button><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)}${r.contract_opgezegd?'. Het contract is binnen deze verlengde periode opgezegd.':` en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.`}</div>`:''}</section><section class="detailSection fullSpan"><h3>Huurdersmeldingen</h3>${tenantReportsForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Activiteitenlogboek</h3>${objectActivityLogHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
   enhanceDetailUxV404215(r);
   setPage('detail', r.object);
   refreshPhotos();
@@ -8106,6 +8108,235 @@ completeTenantReport=async function(reportId){const before=rawTenantIssueReports
 const applyRentIncreaseV404215=applyRentIncrease;
 applyRentIncrease=async function(){const before=activeRentContext?.r?.id;await applyRentIncreaseV404215();if(before&&!activeRentContext)showUxToastV404215('Huurverhoging verwerkt. De melding is automatisch bijgewerkt.');};
 
+
+/* v40.42.19: centraal actiecentrum, kalender en activiteitenlogboek */
+function workflowIcon(name){
+  const icons={
+    action:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"></path><path d="m8 9 2 2 4-4M8 15h8"></path></svg>',
+    calendar:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4M16 3v4M4 10h16"></path></svg>',
+    done:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.5 2.5L16.5 8.5"></path></svg>',
+    clock:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>',
+    history:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"></path><path d="M4 4v4.6h4.6M12 8v4l3 2"></path></svg>'
+  };
+  return icons[name]||icons.action;
+}
+function workflowCreateNav(page,title,icon){
+  if([...document.querySelectorAll('.nav')].some(btn=>btn.dataset.page===page)) return;
+  const sample=document.querySelector('.nav');
+  const parent=sample?.parentElement;
+  if(!parent) return;
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='nav workflowNav';
+  button.dataset.page=page;
+  button.dataset.title=title;
+  button.title=title;
+  button.innerHTML=`<span class="workflowNavIcon">${workflowIcon(icon)}</span><span>${escHtml(title)}</span>`;
+  const settings=[...parent.querySelectorAll('.nav')].find(item=>norm(`${item.dataset.title||''} ${item.textContent||''}`).includes('instell'));
+  if(settings) parent.insertBefore(button,settings); else parent.appendChild(button);
+}
+function ensureWorkflowPagesV404219(){
+  if(document.getElementById('workflowCenterStyles')) return;
+  const style=document.createElement('style');
+  style.id='workflowCenterStyles';
+  style.textContent=`
+    .workflowNav{display:flex;align-items:center;gap:10px}.workflowNavIcon{display:grid;place-items:center;flex:0 0 auto}.workflowNavIcon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .workflowIntro{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin:0 0 18px;padding:18px 20px;border:1px solid var(--ui-border,#e2e8f0);border-radius:16px;background:#fff;box-shadow:var(--ui-shadow,0 1px 2px rgba(15,23,42,.04))}.workflowIntroCopy{display:grid;gap:4px}.workflowIntroCopy strong{font-size:16px;color:#172033}.workflowIntroCopy span{font-size:13px;color:#64748b;line-height:1.5;max-width:760px}
+    .actionCenterSummary,.agendaSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.actionCenterSummary .card,.agendaSummary .card{min-height:92px!important;padding:16px 18px!important}.actionCenterSummary .card span,.agendaSummary .card span{font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.actionCenterSummary .card strong,.agendaSummary .card strong{font-size:28px;line-height:1;color:#172033}
+    .actionCenterGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}.actionCenterColumn{border:1px solid var(--ui-border,#e2e8f0);border-radius:16px;background:#fff;overflow:hidden;box-shadow:var(--ui-shadow,0 1px 2px rgba(15,23,42,.04))}.actionCenterColumnHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid #edf1f5;background:#f8fafc}.actionCenterColumnHeader strong{font-size:14px;color:#172033}.actionCenterCount{display:inline-grid;place-items:center;min-width:27px;height:27px;padding:0 7px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:11px;font-weight:900}.actionCenterBody{display:grid;gap:10px;padding:12px}.actionCenterBody .notificationCard{margin:0!important}.actionCenterEmpty{padding:18px 14px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.5;text-align:center;background:#fbfcfd}.actionCenterDue{display:inline-flex;align-items:center;gap:5px;margin-top:7px;color:#64748b;font-size:11px;font-weight:800}.actionCenterDue svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.actionCenterCompleted{margin-top:14px}.completedWorkflowList{display:grid;gap:8px}.completedWorkflowItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:12px 14px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}.completedWorkflowIcon{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:#ecfdf3;color:#15803d}.completedWorkflowIcon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.completedWorkflowMain{display:grid;gap:2px;min-width:0}.completedWorkflowMain strong{font-size:13px;color:#172033}.completedWorkflowMain span{font-size:11px;color:#64748b;overflow-wrap:anywhere}.completedWorkflowDate{font-size:11px;color:#64748b;font-weight:800;white-space:nowrap}
+    .agendaToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:13px;background:#fff}.agendaToolbarGroup{display:flex;align-items:center;gap:8px}.agendaToolbar button{min-height:38px!important;padding:7px 11px!important;border:1px solid #cbd5e1!important;border-radius:9px!important;background:#fff!important;color:#172033!important;font-weight:800!important}.agendaMonthLabel{min-width:170px;text-align:center;font-size:16px;color:#172033;text-transform:capitalize}.agendaTypeFilter{min-height:38px!important;border-radius:9px!important}.agendaCalendar{border:1px solid #e2e8f0;border-radius:16px;background:#fff;overflow:hidden;box-shadow:var(--ui-shadow,0 1px 2px rgba(15,23,42,.04))}.agendaCalendarInner{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.agendaWeekday{padding:10px;background:#f8fafc;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:10px;font-weight:900;text-align:center;text-transform:uppercase;letter-spacing:.05em}.agendaDay{min-height:116px;padding:8px;border-right:1px solid #edf1f5;border-bottom:1px solid #edf1f5;background:#fff}.agendaDay:nth-child(7n+7){border-right:0}.agendaDay.outsideMonth{background:#fafbfd;color:#94a3b8}.agendaDay.today{box-shadow:inset 0 0 0 2px var(--brand-primary)}.agendaDayHeader{display:flex;justify-content:flex-end}.agendaDayNumber{font-size:11px;font-weight:900}.agendaDayEvents{display:grid;gap:4px;margin-top:5px}.agendaEvent{min-height:0!important;padding:4px 6px!important;border:0!important;border-radius:6px!important;background:#eff6ff!important;color:#1e3a8a!important;text-align:left;font-size:9px!important;font-weight:800!important;line-height:1.25;overflow:hidden;text-overflow:ellipsis}.agendaEvent.contract{background:#fff7ed!important;color:#9a3412!important}.agendaEvent.maintenance,.agendaEvent.inspection{background:#fef2f2!important;color:#991b1b!important}.agendaEvent.finance{background:#f0fdf4!important;color:#166534!important}.agendaEvent.task{background:#faf5ff!important;color:#6b21a8!important}.agendaEvent.energy{background:#ecfeff!important;color:#155e75!important}.agendaMore{font-size:9px;color:#64748b;font-weight:800}.agendaLists{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.agendaListPanel{padding:16px!important}.agendaListPanel h3{margin:0 0 10px;font-size:14px}.agendaList{display:grid;gap:7px}.agendaListItem{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;min-height:54px!important;padding:9px 11px!important;border:1px solid #e2e8f0!important;border-radius:10px!important;background:#fff!important;color:#172033!important;text-align:left}.agendaListDate{font-size:11px;font-weight:900}.agendaListMain{display:grid;gap:2px;min-width:0}.agendaListMain strong{font-size:12px}.agendaListMain span{font-size:10px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agendaListWhen{font-size:10px;color:#64748b;font-weight:800;white-space:nowrap}.agendaEmpty{padding:14px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;font-size:12px;background:#fbfcfd}
+    .activityLog{display:grid;gap:8px}.activityLogIntro{margin:-3px 0 11px;color:#64748b;font-size:11px;line-height:1.5}.activityItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:11px 0;border-top:1px solid #edf1f5}.activityItem:first-of-type{border-top:0}.activityIcon{width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:#f1f5f9;color:#475569}.activityIcon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.activityMain{display:grid;gap:2px}.activityMain strong{font-size:12px;color:#172033}.activityMain span{font-size:11px;color:#64748b;line-height:1.45}.activityDate{font-size:10px;color:#64748b;font-weight:800;white-space:nowrap}
+    @media(max-width:1100px){.actionCenterGrid{grid-template-columns:1fr}.actionCenterSummary,.agendaSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.agendaDay{min-height:96px}.agendaLists{grid-template-columns:1fr}}
+    @media(max-width:760px){.workflowIntro{display:grid;padding:15px}.actionCenterSummary,.agendaSummary{grid-template-columns:1fr 1fr}.agendaToolbar{display:grid;justify-items:stretch}.agendaToolbarGroup{justify-content:space-between}.agendaMonthLabel{min-width:0}.agendaCalendar{overflow-x:auto}.agendaCalendarInner{min-width:760px}.completedWorkflowItem,.activityItem{grid-template-columns:auto minmax(0,1fr)}.completedWorkflowDate,.activityDate{grid-column:2}.agendaListItem{grid-template-columns:78px minmax(0,1fr)}.agendaListWhen{grid-column:2}.workflowNavIcon svg{width:18px;height:18px}}
+  `;
+  document.head.appendChild(style);
+
+  const pageParent=document.querySelector('.page')?.parentElement;
+  if(pageParent&&!el('actiecentrum')){
+    const page=document.createElement('section');
+    page.className='page';
+    page.id='actiecentrum';
+    page.innerHTML=`
+      <div class="workflowIntro"><div class="workflowIntroCopy"><strong>Actiecentrum</strong><span>Alles wat aandacht nodig heeft staat hier automatisch op volgorde. Als je een taak, huurverhoging, onderhoudsregel of keuring afrondt, verdwijnt de bijbehorende openstaande actie vanzelf.</span></div></div>
+      <div id="actionCenterSummary" class="actionCenterSummary"></div>
+      <div class="actionCenterGrid">
+        <section class="actionCenterColumn"><div class="actionCenterColumnHeader"><strong>Nu doen</strong><span id="actionCenterNowCount" class="actionCenterCount">0</span></div><div id="actionCenterNow" class="actionCenterBody"></div></section>
+        <section class="actionCenterColumn"><div class="actionCenterColumnHeader"><strong>Deze maand</strong><span id="actionCenterMonthCount" class="actionCenterCount">0</span></div><div id="actionCenterMonth" class="actionCenterBody"></div></section>
+        <section class="actionCenterColumn"><div class="actionCenterColumnHeader"><strong>Later</strong><span id="actionCenterLaterCount" class="actionCenterCount">0</span></div><div id="actionCenterLater" class="actionCenterBody"></div></section>
+      </div>
+      <section class="panel actionCenterCompleted"><h2>Recent afgerond</h2><div id="actionCenterCompleted" class="completedWorkflowList"></div></section>`;
+    pageParent.appendChild(page);
+  }
+  workflowCreateNav('actiecentrum','Actiecentrum','action');
+
+  let agendaPage=el('agendaCalendar')?.closest('.page')||el('agenda')||el('kalender');
+  if(pageParent&&!agendaPage){
+    agendaPage=document.createElement('section');
+    agendaPage.className='page';
+    agendaPage.id='agenda';
+    agendaPage.innerHTML=`
+      <div class="workflowIntro"><div class="workflowIntroCopy"><strong>Kalender</strong><span>Bekijk contractmomenten, huurverhogingen, onderhoud, keuringen, energielabels en taken in één tijdlijn.</span></div></div>
+      <div id="agendaSummary" class="agendaSummary"></div>
+      <div class="agendaToolbar">
+        <div class="agendaToolbarGroup"><button id="agendaPrevBtn" type="button">Vorige</button><button id="agendaTodayBtn" type="button">Vandaag</button><button id="agendaNextBtn" type="button">Volgende</button></div>
+        <strong id="agendaMonthLabel" class="agendaMonthLabel"></strong>
+        <label>Toon <select id="agendaTypeFilter" class="agendaTypeFilter"><option value="all">Alles</option><option value="contract">Contracten</option><option value="finance">Huurverhogingen</option><option value="maintenance">Onderhoud</option><option value="inspection">Keuringen</option><option value="energy">Energielabels</option><option value="task">Taken</option></select></label>
+      </div>
+      <div id="agendaCalendar" class="agendaCalendar"></div>
+      <div class="agendaLists"><section class="panel agendaListPanel"><h3>Komende 90 dagen</h3><div id="agendaUpcomingList" class="agendaList"></div></section><section class="panel agendaListPanel"><h3>Afgelopen 90 dagen</h3><div id="agendaRecentList" class="agendaList"></div></section></div>`;
+    pageParent.appendChild(agendaPage);
+  }
+  if(agendaPage){
+    if(!agendaPage.id) agendaPage.id='agenda';
+    workflowCreateNav(agendaPage.id,'Kalender','calendar');
+  }
+  const quick=document.querySelector('#professionalDashboardCommandBar .professionalQuickActions');
+  if(quick&&!quick.querySelector('[data-workflow-page="actiecentrum"]')){
+    quick.insertAdjacentHTML('beforeend',`<button type="button" class="professionalQuickBtn" data-workflow-page="actiecentrum"><span>${workflowIcon('action')}</span>Actiecentrum</button><button type="button" class="professionalQuickBtn" data-workflow-page="${escAttr(agendaPage?.id||'agenda')}"><span>${workflowIcon('calendar')}</span>Kalender</button>`);
+  }
+}
+function workflowNotificationDue(item){
+  if(item.taskId){
+    const task=rawTasks.find(row=>row.id===item.taskId);
+    return task?.due_date||null;
+  }
+  if(item.sourceId&&item.type==='Onderhoud'){
+    const row=maintenanceSourceRows(vastgoedData).find(entry=>String(entry.id||entry.key)===String(item.sourceId));
+    return row?.planned_date||null;
+  }
+  if(item.sourceId&&item.type==='Keuring'){
+    const row=rawInspections.find(entry=>String(entry.id)===String(item.sourceId));
+    return inspectionDeadline(row)||null;
+  }
+  const property=item.objectId?getPropertyById(item.objectId):null;
+  if(!property) return null;
+  if(item.type==='Huurverhoging') return rentIncreaseEffectiveDate(property)||null;
+  if(item.type==='Energielabel') return property.energielabel_geldig_tot||null;
+  if(['Opzegdatum','Contractcontrole','Contractverlenging'].includes(item.type)) return property.opzegdatum||property.einddatum_contract||null;
+  if(['Contract','Opzegging'].includes(item.type)) return property.einddatum_contract||property.opzegdatum||null;
+  return null;
+}
+function workflowBucket(item){
+  const due=workflowNotificationDue(item);
+  const days=due?daysUntil(due):null;
+  if(item.sev==='danger'||(days!==null&&days<=7)) return 'now';
+  if(item.reportId){
+    const report=rawTenantIssueReports.find(row=>row.id===item.reportId);
+    if(report?.urgency==='Spoed') return 'now';
+    return 'month';
+  }
+  if(days!==null&&days<=31) return 'month';
+  if(item.sev==='warning'&&days===null) return 'month';
+  return 'later';
+}
+function workflowDueText(item){
+  const due=workflowNotificationDue(item);
+  if(!due) return '';
+  const days=daysUntil(due);
+  if(days===null) return dateFmt(due);
+  if(days<0) return `${Math.abs(days)} dagen te laat · ${dateFmt(due)}`;
+  if(days===0) return `Vandaag · ${dateFmt(due)}`;
+  if(days===1) return `Morgen · ${dateFmt(due)}`;
+  return `Over ${days} dagen · ${dateFmt(due)}`;
+}
+function actionCenterCardHtml(item){
+  const due=workflowDueText(item);
+  return `<div class="actionCenterCard">${actionHtml(item)}${due?`<div class="actionCenterDue">${workflowIcon('clock')}<span>${escHtml(due)}</span></div>`:''}</div>`;
+}
+function workflowTimestamp(value){
+  const date=value?new Date(value):null;
+  return date&&!Number.isNaN(date.getTime())?date:null;
+}
+function completedWorkflowItems(data){
+  const allowed=new Set(data.map(row=>row.id));
+  const items=[];
+  const add=(date,title,detail,objectId=null,taskId=null)=>{
+    const parsed=workflowTimestamp(date);
+    if(!parsed) return;
+    const age=(Date.now()-parsed.getTime())/86400000;
+    if(age>90) return;
+    items.push({date:parsed.toISOString(),title,detail,objectId,taskId});
+  };
+  rawTasks.filter(task=>task.status==='Afgerond'&&(!task.property_id||allowed.has(task.property_id))).forEach(task=>{
+    const property=task.property_id?getPropertyById(task.property_id):null;
+    add(task.updated_at||task.created_at,`Taak afgerond: ${task.title}`,property?.object||'Algemene taak',task.property_id||null,task.id);
+  });
+  rawTenantIssueReports.filter(report=>['Afgerond','Afgewezen','Omgezet naar onderhoud'].includes(report.status)&&allowed.has(report.property_id)).forEach(report=>{
+    const property=getPropertyById(report.property_id);
+    add(report.updated_at||report.submitted_at,`Huurdersmelding ${norm(report.status)==='afgerond'?'afgerond':report.status.toLowerCase()}`,`${report.category||'Melding'} · ${property?.object||'Object'}`,report.property_id);
+  });
+  maintenanceSourceRows(data).filter(row=>allowed.has(row.objectId)&&maintenanceStatusLabel(row.status)==='Afgerond').forEach(row=>{
+    add(row.done_date||row.updated_at||row.planned_date,`Onderhoud afgerond: ${row.type||'Onderhoud'}`,row.object||'Object',row.objectId);
+  });
+  rawInspections.filter(row=>allowed.has(row.property_id)&&row.inspection_date).forEach(row=>{
+    const property=getPropertyById(row.property_id);
+    add(row.inspection_date,`Keuring uitgevoerd: ${row.inspection_type}`,`${property?.object||'Object'} · ${inspectionDisplayStatus(row)}`,row.property_id);
+  });
+  rawRentIncreaseProposals.filter(row=>allowed.has(row.property_id)&&['Verwerkt','Niet verhoogd'].includes(row.status)).forEach(row=>{
+    const property=getPropertyById(row.property_id);
+    add(row.updated_at||row.effective_date,row.status==='Verwerkt'?'Huurverhoging verwerkt':'Geen huurverhoging toegepast',`${property?.object||'Object'} · ingangsdatum ${dateFmt(row.effective_date)}`,row.property_id);
+  });
+  return items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
+}
+function renderActionCenter(data,notes){
+  if(!el('actionCenterNow')) return;
+  const groups={now:[],month:[],later:[]};
+  notes.forEach(item=>groups[workflowBucket(item)].push(item));
+  const sortGroup=rows=>rows.sort((a,b)=>{
+    const da=workflowNotificationDue(a),db=workflowNotificationDue(b);
+    if(da&&db) return da.localeCompare(db);
+    if(da) return -1;if(db) return 1;
+    return (a.sev==='danger'?-1:1)-(b.sev==='danger'?-1:1);
+  });
+  Object.values(groups).forEach(sortGroup);
+  const setGroup=(id,countId,rows,empty)=>{
+    el(countId).textContent=rows.length;
+    el(id).innerHTML=rows.length?rows.map(actionCenterCardHtml).join(''):`<div class="actionCenterEmpty">${empty}</div>`;
+  };
+  setGroup('actionCenterNow','actionCenterNowCount',groups.now,'Geen urgente acties.');
+  setGroup('actionCenterMonth','actionCenterMonthCount',groups.month,'Geen acties voor deze maand.');
+  setGroup('actionCenterLater','actionCenterLaterCount',groups.later,'Geen latere acties.');
+  const completed=completedWorkflowItems(data);
+  if(el('actionCenterSummary')) el('actionCenterSummary').innerHTML=`<div class="card"><span>Nu doen</span><strong>${groups.now.length}</strong></div><div class="card"><span>Deze maand</span><strong>${groups.month.length}</strong></div><div class="card"><span>Later</span><strong>${groups.later.length}</strong></div><div class="card"><span>Recent afgerond</span><strong>${completed.length}</strong></div>`;
+  if(el('actionCenterCompleted')) el('actionCenterCompleted').innerHTML=completed.length?completed.slice(0,12).map(item=>`<div class="completedWorkflowItem"><span class="completedWorkflowIcon">${workflowIcon('done')}</span><span class="completedWorkflowMain"><strong>${escHtml(item.title)}</strong><span>${escHtml(item.detail||'')}</span></span><span class="completedWorkflowDate">${escHtml(new Date(item.date).toLocaleDateString('nl-NL'))}</span></div>`).join(''):'<div class="actionCenterEmpty">Nog geen recent afgeronde acties gevonden.</div>';
+}
+function activityAdd(items,{date,title,detail='',kind='history'}){
+  const parsed=workflowTimestamp(date);
+  if(!parsed) return;
+  items.push({date:parsed.toISOString(),title,detail,kind});
+}
+function objectActivityItems(propertyId){
+  const property=getPropertyById(propertyId);
+  if(!property) return [];
+  const items=[];
+  activityAdd(items,{date:property.property?.updated_at||property.property?.created_at,title:'Objectgegevens bijgewerkt',detail:property.object,kind:'history'});
+  if(property.contract?.id) activityAdd(items,{date:property.contract.updated_at||property.contract.created_at||property.contract.start_date,title:'Contract bijgewerkt',detail:`${property.contract_status}${property.einddatum_contract?` · huidige einddatum ${dateFmt(property.einddatum_contract)}`:''}`,kind:'contract'});
+  rawTasks.filter(row=>row.property_id===propertyId).forEach(row=>activityAdd(items,{date:row.updated_at||row.created_at,title:`Taak: ${row.title}`,detail:`Status ${row.status}${row.due_date?` · deadline ${dateFmt(row.due_date)}`:''}`,kind:'task'}));
+  rawTenantIssueReports.filter(row=>row.property_id===propertyId).forEach(row=>activityAdd(items,{date:row.updated_at||row.submitted_at,title:`Huurdersmelding: ${row.category||'Melding'}`,detail:`${row.status} · urgentie ${row.urgency||'Normaal'}`,kind:'message'}));
+  maintenanceSourceRows([property]).filter(row=>row.objectId===propertyId).forEach(row=>activityAdd(items,{date:row.done_date||row.raw?.updated_at||row.updated_at||row.planned_date,title:`Onderhoud: ${row.type||'Onderhoud'}`,detail:`${maintenanceStatusLabel(row.status)}${row.planned_date?` · planning ${dateFmt(row.planned_date)}`:''}`,kind:'maintenance'}));
+  rawInspections.filter(row=>row.property_id===propertyId).forEach(row=>activityAdd(items,{date:row.updated_at||row.inspection_date||row.created_at,title:`Keuring: ${row.inspection_type}`,detail:`${inspectionDisplayStatus(row)}${inspectionDeadline(row)?` · geldig/volgende ${dateFmt(inspectionDeadline(row))}`:''}`,kind:'inspection'}));
+  rawRentIncreaseProposals.filter(row=>row.property_id===propertyId).forEach(row=>activityAdd(items,{date:row.updated_at||row.created_at||row.effective_date,title:`Huurverhoging: ${row.status||'Concept'}`,detail:`Ingangsdatum ${dateFmt(row.effective_date)}`,kind:'finance'}));
+  (property.documenten||[]).forEach(row=>activityAdd(items,{date:row.updated_at||row.created_at,title:'Document toegevoegd/bijgewerkt',detail:row.name||row.file_name||row.title||'Document',kind:'document'}));
+  return items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
+}
+function objectActivityLogHtml(propertyId){
+  const items=objectActivityItems(propertyId);
+  if(!items.length) return '<p class="empty">Nog geen activiteiten beschikbaar.</p>';
+  const iconFor=kind=>kind==='task'?workflowIcon('done'):kind==='maintenance'||kind==='inspection'?professionalUxIcon('tool'):kind==='contract'?professionalUxIcon('check'):workflowIcon('history');
+  return `<div class="activityLog"><p class="activityLogIntro">Samengesteld uit de bestaande taken, meldingen, contracten, onderhoud, keuringen, huurverhogingen en documenten.</p>${items.map(item=>`<div class="activityItem"><span class="activityIcon">${iconFor(item.kind)}</span><span class="activityMain"><strong>${escHtml(item.title)}</strong><span>${escHtml(item.detail||'')}</span></span><span class="activityDate">${escHtml(new Date(item.date).toLocaleString('nl-NL',{dateStyle:'short',timeStyle:'short'}))}</span></div>`).join('')}</div>`;
+}
+function bindWorkflowUiV404219(){
+  if(window.__workflowV404219Bound) return;
+  window.__workflowV404219Bound=true;
+  document.body.addEventListener('click',event=>{
+    const quick=event.target.closest('[data-workflow-page]');
+    if(quick){
+      const page=quick.dataset.workflowPage;
+      const nav=[...document.querySelectorAll('.nav')].find(item=>item.dataset.page===page);
+      nav?.click();
+    }
+  });
+}
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
@@ -8119,6 +8350,8 @@ function init(){
   ensureProfessionalUx();
   ensureSimpleSmartDashboardUi();
   ensureUxCleanupV404215();
+  ensureWorkflowPagesV404219();
+  bindWorkflowUiV404219();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
