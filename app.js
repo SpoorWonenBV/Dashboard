@@ -2713,6 +2713,19 @@ function notificationOccurrenceKey(item){
     : `${type}|object:${item.objectId||'algemeen'}`;
 
   if(item.sourceId){
+    if(type==='Onderhoud'){
+      const maintenanceRow=rawMaintenance.find(row=>row.id===item.sourceId)
+        ||rawMaintenanceHistory.find(row=>row.id===item.sourceId);
+      if(maintenanceRow){
+        return [
+          base,
+          maintenanceRow.planned_date||'',
+          maintenanceRow.completed_date||maintenanceRow.done_date||'',
+          maintenanceStatusLabel(maintenanceRow.status),
+          maintenanceRow.updated_at||''
+        ].join('|');
+      }
+    }
     const inspection=rawInspections.find(row=>row.id===item.sourceId);
     if(inspection){
       return [
@@ -3046,7 +3059,6 @@ function notificationItems(data){
     const timeline=r.contract_timeline||contractTimeline(r.contract||{});
     const noticeDays=timeline.noticeDays;
     const contractDays=timeline.endDays;
-    const maintenanceDays=daysUntil(r.scope_inspectie_geldig_tot);
     const energyDays=daysUntil(r.energielabel_geldig_tot);
     // Gebruik de eerstvolgende nog niet verwerkte huurverhoging.
     // rentIncreaseEffectiveDate() schuift automatisch een jaar door zodra de
@@ -3094,12 +3106,6 @@ function notificationItems(data){
       }
     }
 
-    if(maintenanceDays!==null){
-      if(maintenanceDays<0) items.push(actionItem('danger','Onderhoud',`Onderhoud/inspectie verlopen: ${r.object}`,`Datum was ${dateFmt(r.scope_inspectie_geldig_tot)}.`,r.id));
-      else if(maintenanceDays<=30) items.push(actionItem('danger','Onderhoud',`Onderhoud binnen ${maintenanceDays} dagen`,`${r.object}: ${r.onderhoud_titel} op ${dateFmt(r.scope_inspectie_geldig_tot)}.`,r.id));
-      else if(maintenanceDays<=90) items.push(actionItem('warning','Onderhoud',`Onderhoud binnen 90 dagen`,`${r.object}: ${r.onderhoud_titel} op ${dateFmt(r.scope_inspectie_geldig_tot)}.`,r.id));
-    }
-
     if(r.energielabel_verplicht&&energyDays!==null){
       if(energyDays<0) items.push(actionItem('danger','Energielabel',`Energielabel verlopen: ${r.object}`,`Geldig tot ${dateFmt(r.energielabel_geldig_tot)}.`,r.id));
       else if(energyDays<=60) items.push(actionItem('danger','Energielabel',`Energielabel binnen ${energyDays} dagen`,`${r.object}: geldig tot ${dateFmt(r.energielabel_geldig_tot)}.`,r.id));
@@ -3111,6 +3117,27 @@ function notificationItems(data){
       else if(rentIncreaseDays<=60) items.push(actionItem('warning','Huurverhoging',`Huurverhoging binnen 60 dagen`,`${r.object}: ingangsdatum ${dateFmt(rentIncreaseDate)} · maand ${r.maand_huurverhoging}.`,r.id));
     }
   });
+
+  // Onderhoudsmeldingen worden rechtstreeks uit de onderhoudsregels opgebouwd.
+  // Afgeronde regels worden nooit meer als open melding getoond. Wanneer de planning
+  // naar een latere datum wordt verplaatst, volgt de melding automatisch die nieuwe datum.
+  maintenanceSourceRows(data)
+    .filter(row=>maintenanceStatusLabel(row.status)!=='Afgerond'&&row.planned_date)
+    .forEach(row=>{
+      const days=daysUntil(row.planned_date);
+      if(days===null||days>90) return;
+      const objectName=row.object||'Onbekend object';
+      const title=row.type&&row.type!=='-'?row.type:'Onderhoud';
+      const sourceId=row.id||row.key||null;
+      if(days<0){
+        items.push(actionItem('danger','Onderhoud',`Onderhoud te laat: ${objectName}`,`${title} stond gepland op ${dateFmt(row.planned_date)}.`,row.objectId,null,null,sourceId));
+      }else if(days<=30){
+        items.push(actionItem('danger','Onderhoud',`Onderhoud binnen ${days} dagen`,`${objectName}: ${title} op ${dateFmt(row.planned_date)}.`,row.objectId,null,null,sourceId));
+      }else{
+        items.push(actionItem('warning','Onderhoud','Onderhoud binnen 90 dagen',`${objectName}: ${title} op ${dateFmt(row.planned_date)}.`,row.objectId,null,null,sourceId));
+      }
+    });
+
   const allowedIds=new Set(data.map(item=>item.id));
   rawInspections.filter(row=>allowedIds.has(row.property_id)).forEach(row=>{
     const property=inspectionProperty(row);
@@ -5835,7 +5862,21 @@ function inspectionProperty(row){
 }
 function inspectionDeadline(row){
   if(!row) return null;
-  return row.next_inspection_date||row.valid_until||null;
+  const deadline=row.next_inspection_date||row.valid_until||null;
+  if(!deadline) return null;
+
+  // Wanneer een keuring opnieuw is uitgevoerd en expliciet weer op 'Geldig' staat,
+  // mag een vervaldatum uit de vorige cyclus geen nieuwe melding blijven veroorzaken.
+  // Een nieuwe toekomstige 'geldig tot' / 'volgende keuring'-datum blijft wel leidend.
+  const stored=clean(row.status);
+  const inspectionDate=String(row.inspection_date||'').slice(0,10);
+  const deadlineDate=String(deadline||'').slice(0,10);
+  const inspectionParts=isoParts(inspectionDate);
+  const deadlineParts=isoParts(deadlineDate);
+  if(stored==='Geldig'&&inspectionParts&&deadlineParts&&deadlineDate<=inspectionDate){
+    return null;
+  }
+  return deadline;
 }
 function inspectionDisplayStatus(row){
   if(isEnergyLabelInspection(row)&&inspectionProperty(row)?.energielabel_verplicht===false){
