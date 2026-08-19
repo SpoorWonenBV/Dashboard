@@ -4462,7 +4462,7 @@ function ensureTenantReportUi(){
   modal.setAttribute('aria-modal','true');
   modal.setAttribute('aria-labelledby','tenantReportModalTitle');
   modal.innerHTML=`<section class="tenantReportModalCard">
-    <header class="tenantReportModalHeader"><div><p class="tenantReportModalEyebrow">Huurdersmelding</p><h2 id="tenantReportModalTitle">Melding bekijken</h2></div><button type="button" class="tenantReportModalClose" aria-label="Sluiten">×</button></header>
+    <header class="tenantReportModalHeader"><div><p class="tenantReportModalEyebrow">Huurdersmelding</p><h2 id="tenantReportModalTitle">Melding bekijken</h2></div><button type="button" class="tenantReportModalClose" aria-label="Sluiten"><span aria-hidden="true">${notificationIconSvg('close')}</span></button></header>
     <div id="tenantReportModalBody" class="tenantReportModalBody"></div>
     <footer id="tenantReportModalActions" class="tenantReportModalActions"></footer>
   </section>`;
@@ -6682,7 +6682,7 @@ function render(){
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   updateNotificationCenterBell(notes);
   if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
-  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard"><h3>${r.object}</h3><div class="meta">${r.straatnaam} ${r.huisnummer} ${r.stad}</div><div class="row"><span>Huurder</span><strong>${r.huurder}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div><button class="smallBtn detailBtn" data-id="${r.id}">Details</button><button class="smallBtn issueQrBtn" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn" data-id="${r.id}">Bewerken</button></article>`).join('') || '<p>Geen objecten gevonden.</p>';
+  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard premiumObjectCard"><div class="objectCardHeader"><div class="objectCardTitleWrap"><h3>${escHtml(r.object)}</h3><div class="meta">${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</div></div><span class="objectTypePill">${escHtml(r.type||'Object')}</span></div><div class="objectCardFacts"><div class="row"><span>Huurder</span><strong>${escHtml(r.huurder)}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div></div><div class="objectCardActions"><button class="smallBtn detailBtn primaryObjectAction" data-id="${r.id}">Details</button><button class="smallBtn issueQrBtn secondaryObjectAction" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn secondaryObjectAction" data-id="${r.id}">Bewerken</button></div></article>`).join('') || '<p class="premiumEmptyState">Geen objecten gevonden.</p>';
   refreshPhotos();
   renderContractOverview(contractPageData);
   renderFinancialPage(data);
@@ -6945,6 +6945,184 @@ function updateCalculatedNoticeDate(){
   }
 }
 
+function ensurePremiumDashboardUi(){
+  if(document.getElementById('premiumDashboardStyles')) return;
+  const style=document.createElement('style');
+  style.id='premiumDashboardStyles';
+  style.textContent=`
+    :root{
+      --ui-bg:#f6f8fb;
+      --ui-surface:#ffffff;
+      --ui-surface-soft:#f8fafc;
+      --ui-border:#e2e8f0;
+      --ui-border-strong:#cbd5e1;
+      --ui-text:#172033;
+      --ui-muted:#64748b;
+      --ui-radius:16px;
+      --ui-radius-sm:10px;
+      --ui-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 28px rgba(15,23,42,.045);
+      --ui-shadow-raised:0 18px 50px rgba(15,23,42,.13);
+      --ui-focus:#38bdf8;
+    }
+    html{background:var(--ui-bg)}
+    body{background:var(--ui-bg)!important;color:var(--ui-text);line-height:1.45;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+    .main{padding:30px clamp(20px,2.7vw,42px) 42px!important;background:var(--ui-bg);min-height:100vh}
+    .main>header{margin-bottom:24px!important;padding-bottom:18px;border-bottom:1px solid var(--ui-border);align-items:flex-end!important}
+    #pageTitle{font-size:clamp(27px,2.2vw,36px);line-height:1.08;letter-spacing:-.035em;font-weight:800}
+    .main>header p{max-width:720px;line-height:1.5}
+    .headerActions{gap:9px!important;align-items:center!important}
+    #search{min-height:44px!important;border-color:var(--ui-border-strong)!important;border-radius:11px!important;background:#fff!important;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:border-color .16s ease,box-shadow .16s ease}
+    #search:focus{outline:0;border-color:#94a3b8!important;box-shadow:0 0 0 3px rgba(56,189,248,.17)}
+
+    .sidebar{box-shadow:8px 0 28px rgba(15,23,42,.07)}
+    .nav,.logoutBtn{transition:background .16s ease,color .16s ease,transform .16s ease!important}
+    .nav:hover{transform:translateX(2px)}
+    .nav.active{background:rgba(255,255,255,.12)!important;box-shadow:inset 3px 0 0 var(--brand-accent)}
+    .sidebar.collapsed .nav:hover{transform:none}
+
+    .page.active{animation:premiumPageIn .16s ease-out}
+    @keyframes premiumPageIn{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:none}}
+    @media(prefers-reduced-motion:reduce){.page.active{animation:none}.nav,button,input,select,textarea{transition:none!important}}
+
+    .card,.panel,.objectCard,.detailHero,.detailSection,.maintenanceObjectCard{
+      border:1px solid var(--ui-border)!important;
+      border-radius:var(--ui-radius)!important;
+      background:var(--ui-surface)!important;
+      box-shadow:var(--ui-shadow)!important;
+    }
+    .panel{padding:20px!important;margin-bottom:18px!important}
+    .panel>h2,.dashboardInsights .panel h2{margin:0 0 14px;font-size:17px;line-height:1.25;letter-spacing:-.015em}
+    #dashboard>.cards,.contractSummaryCards,.financialSummaryCards,.maintenanceCards{gap:12px!important}
+    #dashboard>.cards>.card,.contractSummaryCards>.card,.financialSummaryCards>.card,.maintenanceCards>.card{
+      position:relative;padding:19px 20px!important;overflow:hidden;min-height:104px;
+    }
+    #dashboard>.cards>.card::before,.contractSummaryCards>.card::before,.financialSummaryCards>.card::before,.maintenanceCards>.card::before{
+      content:'';position:absolute;left:0;top:17px;bottom:17px;width:3px;border-radius:999px;background:var(--brand-primary);opacity:.75
+    }
+    .card span{font-size:12px!important;font-weight:700;letter-spacing:.015em;color:var(--ui-muted)!important;margin-bottom:7px!important}
+    .card strong{font-size:clamp(25px,2.1vw,31px)!important;line-height:1.08;letter-spacing:-.035em;color:var(--ui-text)}
+    .dashboardInsights{gap:12px!important}
+    .dashboardInsights .panel{min-height:180px}
+    .bigMetric{font-size:38px!important;letter-spacing:-.04em}
+    .chartRow{margin:12px 0!important}.bar{height:8px!important;background:#e8edf3!important}.bar span{background:var(--brand-primary)!important}
+
+    .alertList{display:grid;gap:10px}
+    .alertList>.alert{margin:0!important}
+    .alertList>p,.premiumEmptyState,#objectGrid>p,.empty{
+      border:1px dashed var(--ui-border-strong);border-radius:12px;background:var(--ui-surface-soft);color:var(--ui-muted);padding:16px 18px;font-style:normal;line-height:1.5
+    }
+    .notificationCard{box-shadow:none!important;border-radius:13px!important;padding:15px 16px!important;transition:transform .15s ease,box-shadow .15s ease}
+    .notificationCard:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(15,23,42,.07)!important}
+    .notificationTitle{font-size:15px!important;line-height:1.35}.notificationText{color:#475569;line-height:1.5}
+
+    button,.headerCsvButton,.financialTab,.maintenanceTab,.rentPropertyTab{
+      font-family:inherit;letter-spacing:0;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease,transform .12s ease
+    }
+    button:not(:disabled):active,.headerCsvButton:active{transform:translateY(1px)}
+    button:focus-visible,.headerCsvButton:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+      outline:3px solid rgba(56,189,248,.34)!important;outline-offset:2px
+    }
+    .smallBtn,.secondaryBtn,.backBtn,.miniLink,.notificationAction,.headerCsvButton{
+      min-height:39px;border-radius:10px!important;font-size:13px!important;font-weight:750!important
+    }
+    .smallBtn,.secondaryBtn,.backBtn{
+      background:#fff!important;color:var(--ui-text)!important;border:1px solid var(--ui-border-strong)!important;box-shadow:0 1px 1px rgba(15,23,42,.025)
+    }
+    .smallBtn:hover,.secondaryBtn:hover,.backBtn:hover,.miniLink:hover{background:#f8fafc!important;border-color:#94a3b8!important}
+    .miniLink{margin-top:0!important;background:#fff!important;color:var(--ui-text)!important;border:1px solid var(--ui-border-strong)!important;padding:7px 10px!important}
+    .dangerBtn{background:#b42318!important;color:#fff!important;border-color:#b42318!important}
+    .formActions button[type='submit'],#newPropertyBtn,#newTaskBtn,.primaryObjectAction{
+      background:var(--brand-primary)!important;color:#fff!important;border:1px solid var(--brand-primary)!important;box-shadow:0 4px 12px rgba(15,23,42,.12)
+    }
+    .formActions button[type='submit']:hover,#newPropertyBtn:hover,#newTaskBtn:hover,.primaryObjectAction:hover{filter:brightness(1.08)}
+    .headerCsvButton{background:var(--brand-primary)!important;color:#fff!important;border:1px solid var(--brand-primary)!important;box-shadow:0 4px 12px rgba(15,23,42,.1)}
+    .headerCsvButton:hover{filter:brightness(1.08)}
+
+    .pageFilters,.maintenanceFilters,.taskFilterBar{
+      padding:13px!important;margin:0 0 16px!important;border:1px solid var(--ui-border)!important;border-radius:14px!important;background:#fff!important;box-shadow:0 1px 2px rgba(15,23,42,.025)
+    }
+    .pageFilters label,.maintenanceFilters label,.taskFilterBar label{font-size:12px!important;color:#475569!important}
+    .pageFilters select,.pageFilters input,.maintenanceFilters select,.maintenanceFilters input,.taskFilterBar select,.taskFilterBar input{
+      min-height:41px!important;margin-top:5px!important;border:1px solid var(--ui-border-strong)!important;border-radius:9px!important;background:#fff!important;color:var(--ui-text)!important;padding:9px 11px!important
+    }
+    form input,form textarea,form select{border-color:var(--ui-border-strong)!important;border-radius:10px!important;box-shadow:0 1px 1px rgba(15,23,42,.02)}
+    form input:focus,form textarea:focus,form select:focus{border-color:#94a3b8!important;box-shadow:0 0 0 3px rgba(56,189,248,.13);outline:0}
+    form h3{font-size:15px!important;letter-spacing:-.01em;color:var(--ui-text);border-top-color:var(--ui-border)!important}
+
+    .contractTablePanel,.financialTablePanel{padding:0!important}
+    .contractTableWrap,.financialTableWrap,.notificationLogWrap{border-radius:var(--ui-radius);overflow:auto;background:#fff}
+    table{font-variant-numeric:tabular-nums}
+    th{padding:13px 14px!important;background:#f8fafc;color:#526174!important;font-size:11px!important;font-weight:800!important;letter-spacing:.045em;text-transform:uppercase;border-bottom:1px solid var(--ui-border)!important;white-space:nowrap}
+    td{padding:14px!important;border-bottom:1px solid #edf1f5!important;vertical-align:middle}
+    table tr:last-child td{border-bottom:0!important}
+    #contractTable tr:not(:first-child):hover td,#rentIncreaseTable tr:not(:first-child):hover td,#serviceCostTable tr:not(:first-child):hover td,.maintenanceObjectTable tr:not(:first-child):hover td,#taskTable tr:not(:first-child):hover td,#dataCheckTable tr:not(:first-child):hover td,#tenantReportTable tr:not(:first-child):hover td{background:#fafbfd}
+    #contractTable td:first-child strong{font-size:14px}.subtle{color:var(--ui-muted)!important;line-height:1.35}
+    .badge{padding:5px 9px!important;font-size:11px!important;line-height:1.2;white-space:nowrap}
+
+    #objectGrid.grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))!important;gap:14px!important}
+    .premiumObjectCard{display:flex;flex-direction:column;padding:0!important;overflow:hidden;min-height:390px;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+    .premiumObjectCard:hover{transform:translateY(-2px);border-color:#d2dae5!important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 16px 34px rgba(15,23,42,.07)!important}
+    .objectCardHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:19px 19px 15px;border-bottom:1px solid #eef2f6}
+    .objectCardTitleWrap{min-width:0}.premiumObjectCard h3{margin:0 0 5px!important;font-size:18px;line-height:1.25;letter-spacing:-.025em}.premiumObjectCard .meta{margin:0!important;font-size:12px;line-height:1.45}
+    .objectTypePill{flex:0 0 auto;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border:1px solid #dbe3ec;border-radius:999px;background:#f8fafc;color:#526174;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.045em}
+    .objectCardFacts{padding:3px 19px 8px;flex:1}.premiumObjectCard .row{padding:10px 0!important;border-top:1px solid #f0f3f6!important;align-items:center}.premiumObjectCard .row:first-child{border-top:0!important}.premiumObjectCard .row>span:first-child{color:var(--ui-muted);font-size:12px}.premiumObjectCard .row>strong{font-size:13px;text-align:right;overflow-wrap:anywhere}
+    .objectCardActions{display:grid;grid-template-columns:minmax(0,1.15fr) auto auto;gap:8px;padding:13px 19px 17px;border-top:1px solid #eef2f6;background:#fbfcfd}
+    .objectCardActions .smallBtn{margin:0!important;min-height:40px!important;padding:9px 11px!important}
+    .secondaryObjectAction{background:#fff!important}
+
+    .detailHero{padding:23px 24px!important;margin-bottom:14px!important}.detailHeroTop{align-items:center!important}.detailHero h2{font-size:clamp(23px,2vw,30px);letter-spacing:-.035em}.detailHero .meta{margin-bottom:0!important;line-height:1.55}
+    .detailGrid{gap:14px!important}.detailSection{padding:20px!important}.detailSection h3{display:flex;align-items:center;gap:8px;margin:0 0 13px!important;padding-bottom:11px;border-bottom:1px solid var(--ui-border);font-size:15px;letter-spacing:-.012em}
+    .kv{padding:10px 0!important;border-top:1px solid #f0f3f6!important;align-items:flex-start}.kv:first-of-type{border-top:0!important}.kv span:first-child{font-size:12px;line-height:1.4}.kv strong{text-align:right;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+    .detailSection.fullSpan{overflow-x:auto}
+    .contractDetailNotice{border-radius:10px!important}
+
+    .modal{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+    .modalCard,.tenantReportModalCard,.notificationCenterCardShell{border:1px solid rgba(226,232,240,.9)!important;border-radius:18px!important;box-shadow:var(--ui-shadow-raised)!important}
+    .modalHeader{padding-bottom:13px;border-bottom:1px solid var(--ui-border)}
+    .modalHeader h2,.tenantReportModalHeader h2{letter-spacing:-.025em}
+    .iconBtn,.tenantReportModalClose{display:inline-grid!important;place-items:center!important;width:38px!important;height:38px!important;min-width:38px!important;padding:0!important;border:1px solid var(--ui-border-strong)!important;background:#fff!important;color:var(--ui-text)!important;border-radius:999px!important;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+    .tenantReportModalClose span{display:grid;place-items:center}.tenantReportModalClose svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+    .tenantReportModalHeader{padding:20px 22px!important}.tenantReportModalBody{padding:20px 22px!important}
+
+    .importSummary span{border:1px solid #e2e8f0;background:#fff!important}
+    .docItem{border-radius:11px!important;box-shadow:0 1px 2px rgba(15,23,42,.025)}
+    .historyForm,.docUpload{border-style:solid!important;border-color:var(--ui-border)!important;background:#fafbfd!important}
+
+    @media(max-width:1100px){#objectGrid.grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important}.objectCardActions{grid-template-columns:1fr 1fr}.objectCardActions .primaryObjectAction{grid-column:1/-1}}
+    @media(max-width:900px){
+      .main{padding:20px 16px 32px!important}.main>header{align-items:stretch!important}.headerActions{display:flex!important;flex-wrap:wrap!important}.headerActions #search{order:10;flex:1 1 100%;margin:6px 0 0!important}
+      .sidebar{box-shadow:0 8px 24px rgba(15,23,42,.09)}
+      #dashboard>.cards{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+      .panel{padding:17px!important}.detailHero{padding:19px!important}.detailSection{padding:17px!important}
+      .detailHeroTop{align-items:flex-start!important}
+      .pageFilters,.maintenanceFilters,.taskFilterBar{padding:11px!important}
+    }
+    @media(max-width:620px){
+      #dashboard>.cards{grid-template-columns:1fr 1fr!important}.card strong{font-size:25px!important}
+      #objectGrid.grid{grid-template-columns:1fr!important}.premiumObjectCard{min-height:0}.objectCardHeader{padding:17px 16px 13px}.objectCardFacts{padding:2px 16px 7px}.objectCardActions{padding:12px 16px 15px}
+      .detailActions{display:grid!important;grid-template-columns:1fr 1fr;width:100%}.detailActions button{margin:0!important;width:100%}
+      .kv{display:grid!important;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:10px!important}.kv strong{text-align:right}
+      th,td{padding:11px!important}
+    }
+    @media(max-width:430px){#dashboard>.cards{grid-template-columns:1fr!important}.objectCardActions{grid-template-columns:1fr 1fr}.objectCardActions .primaryObjectAction{grid-column:1/-1}.objectTypePill{max-width:38%}.main{padding-left:12px!important;padding-right:12px!important}}
+  `;
+  document.head.appendChild(style);
+
+  const attentionPanel=el('attentionList')?.closest('.panel');
+  if(attentionPanel){
+    const heading=attentionPanel.querySelector('h2');
+    if(heading&&norm(heading.textContent)==='aandachtspunten') heading.textContent='Actie vereist';
+    if(!attentionPanel.querySelector('.premiumPanelIntro')){
+      const intro=document.createElement('p');
+      intro.className='premiumPanelIntro';
+      intro.textContent='Openstaande acties en belangrijke deadlines die nu aandacht vragen.';
+      intro.style.cssText='margin:-7px 0 14px;color:#64748b;font-size:13px;line-height:1.5';
+      heading?.insertAdjacentElement('afterend',intro);
+    }
+    el('attentionList')?.setAttribute('aria-live','polite');
+  }
+}
+
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
@@ -6954,6 +7132,7 @@ function init(){
   initSidebar();
   ensureTenantReportUi();
   ensureNotificationCenterUi();
+  ensurePremiumDashboardUi();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
