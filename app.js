@@ -2667,6 +2667,118 @@ const monthMap={januari:0,februari:1,maart:2,april:3,mei:4,juni:5,juli:6,augustu
 function daysUntilRentIncrease(monthName){ if(!monthName) return null; const key=String(monthName).trim().toLowerCase(); if(!(key in monthMap)) return null; const today=new Date(); today.setHours(0,0,0,0); let target=new Date(today.getFullYear(), monthMap[key], 1); if(target<today) target=new Date(today.getFullYear()+1, monthMap[key], 1); return Math.ceil((target-today)/(1000*60*60*24)); }
 function rentIncreaseStatus(monthName){ const days=daysUntilRentIncrease(monthName); if(days===null) return ['Niet ingesteld','warning']; if(days<=30) return ['Deze maand/komende 30 dagen','danger']; if(days<=60) return ['Binnen 60 dagen','warning']; return ['Op orde','ok']; }
 function actionItem(sev,type,title,text,objectId,taskId,reportId,sourceId){ return {sev,type,title,text,objectId,taskId,reportId,sourceId}; }
+
+const TASK_NOTIFICATION_MARKER_RE=/\[\[dashboard-notification:([^\]]+)\]\]/g;
+
+function taskVisibleDescription(value){
+  return String(value||'')
+    .replace(TASK_NOTIFICATION_MARKER_RE,'')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
+function taskNotificationOccurrence(task){
+  const text=String(task?.description||'');
+  const match=[...text.matchAll(TASK_NOTIFICATION_MARKER_RE)][0];
+  if(!match?.[1]) return '';
+  try{return decodeURIComponent(match[1]);}
+  catch(error){return match[1];}
+}
+
+function appendTaskNotificationOccurrence(description,occurrence){
+  const visible=taskVisibleDescription(description);
+  if(!occurrence) return visible||null;
+  const marker=`[[dashboard-notification:${encodeURIComponent(occurrence)}]]`;
+  return `${visible}${visible?'\n\n':''}${marker}`;
+}
+
+function rentIncreaseOccurrence(monthName){
+  const key=String(monthName||'').trim().toLowerCase();
+  if(!(key in monthMap)) return '';
+  const today=new Date();
+  today.setHours(0,0,0,0);
+  let target=new Date(today.getFullYear(),monthMap[key],1);
+  if(target<today) target=new Date(today.getFullYear()+1,monthMap[key],1);
+  return `${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}`;
+}
+
+function notificationOccurrenceKey(item){
+  if(!item) return '';
+  if(item.reportId) return `tenant-report|${item.reportId}`;
+  if(item.taskId) return `task|${item.taskId}`;
+
+  const type=clean(item.type)||'Melding';
+  const base=item.sourceId
+    ? `${type}|source:${item.sourceId}`
+    : `${type}|object:${item.objectId||'algemeen'}`;
+
+  if(item.sourceId){
+    const inspection=rawInspections.find(row=>row.id===item.sourceId);
+    if(inspection){
+      return [
+        base,
+        inspectionDeadline(inspection)||'',
+        clean(inspection.status)||clean(inspection.result)||'',
+        inspection.updated_at||''
+      ].join('|');
+    }
+  }
+
+  const property=item.objectId?getPropertyById(item.objectId):null;
+  if(!property) return `${base}|${notificationKeyPart(item.title||'')}`;
+
+  const timeline=property.contract_timeline||contractTimeline(property.contract||{});
+  if(type==='Huurverhoging'){
+    return [base,rentIncreaseOccurrence(property.maand_huurverhoging),clean(property.maand_huurverhoging)].join('|');
+  }
+  if(['Opzegdatum','Contractverlenging','Opzegging'].includes(type)){
+    return [base,timeline.effectiveNotice||'',timeline.effectiveEnd||timeline.originalEnd||'',String(timeline.renewalCount||0),property.contract?.updated_at||''].join('|');
+  }
+  if(type==='Contractcontrole'){
+    const kind=String(item.title||'').split(':')[0].trim();
+    return [base,notificationKeyPart(kind),timeline.effectiveNotice||timeline.initialNotice||'',timeline.effectiveEnd||timeline.originalEnd||'',property.contract?.updated_at||''].join('|');
+  }
+  if(type==='Contract'){
+    const kind=String(item.title||'').split(':')[0].trim();
+    return [base,notificationKeyPart(kind),timeline.effectiveEnd||timeline.originalEnd||'',property.contract?.updated_at||property.property?.updated_at||''].join('|');
+  }
+  if(type==='Onderhoud'){
+    return [base,property.scope_inspectie_geldig_tot||'',clean(property.onderhoud_titel),property.maintenance?.updated_at||''].join('|');
+  }
+  if(type==='Energielabel'){
+    return [base,property.energielabel_geldig_tot||'',property.property?.updated_at||''].join('|');
+  }
+  if(type==='Leegstand'){
+    return [base,clean(property.status),clean(property.huurder),property.property?.updated_at||''].join('|');
+  }
+  return [base,notificationKeyPart(String(item.title||'').split(':')[0]),property.property?.updated_at||property.contract?.updated_at||''].join('|');
+}
+
+function taskLooksLikeLegacyDashboardNotificationTask(task){
+  return norm(taskVisibleDescription(task?.description)).startsWith('automatisch voorbereid vanuit het dashboard');
+}
+
+function legacyDashboardTaskMatchesNotification(task,item){
+  if(!taskLooksLikeLegacyDashboardNotificationTask(task)||!item||item.taskId||item.reportId) return false;
+  if(item.objectId&&(task.property_id||'')!==item.objectId) return false;
+  const expected=norm(simpleSmartPlainTitle(item).replace(/^Doe taak:\s*/i,''));
+  return Boolean(expected)&&norm(task.title)===expected;
+}
+
+function notificationResolvedByCompletedTask(item){
+  if(!item||item.taskId||item.reportId) return false;
+  const occurrence=notificationOccurrenceKey(item);
+  return rawTasks.some(task=>{
+    if(task.status!=='Afgerond') return false;
+    const linked=taskNotificationOccurrence(task);
+    if(linked&&occurrence) return linked===occurrence;
+    return legacyDashboardTaskMatchesNotification(task,item);
+  });
+}
+
+function taskWasCreatedFromDashboardNotification(task){
+  return Boolean(taskNotificationOccurrence(task))||taskLooksLikeLegacyDashboardNotificationTask(task);
+}
 const SIDEBAR_STORAGE_KEY='vastgoedSidebarCollapsed';
 function setSidebarCollapsed(collapsed,{persist=true}={}){
   const sidebar=document.querySelector('.sidebar');
@@ -3012,7 +3124,7 @@ function notificationItems(data){
     }
   });
   rawTasks
-    .filter(task=>task.status!=='Afgerond'&&task.due_date)
+    .filter(task=>task.status!=='Afgerond'&&task.due_date&&!taskWasCreatedFromDashboardNotification(task))
     .forEach(task=>{
       const days=daysUntil(task.due_date);
       if(days===null||days>7) return;
@@ -3044,7 +3156,9 @@ function notificationItems(data){
     });
 
   const score={danger:0,warning:1,ok:2};
-  return items.sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9));
+  return items
+    .filter(item=>!notificationResolvedByCompletedTask(item))
+    .sort((a,b)=>(score[a.sev]??9)-(score[b.sev]??9));
 }
 const TASK_STATUSES=['Open','In behandeling','Wachten op huurder','Wachten op leverancier','Afgerond'];
 const TASK_PRIORITIES=['Laag','Normaal','Hoog','Urgent'];
@@ -3085,7 +3199,7 @@ function taskMatchesSearch(task){
   if(!query) return true;
   const property=taskProperty(task);
   const haystack=[
-    task.title,task.description,task.status,task.priority,task.due_date,
+    task.title,taskVisibleDescription(task.description),task.status,task.priority,task.due_date,
     property?.object,property?.straatnaam,property?.huisnummer,property?.stad
   ].filter(Boolean).join(' ').toLowerCase();
   return haystack.includes(query.toLowerCase());
@@ -3211,7 +3325,7 @@ function renderTasks(){
     return `<tr class="${task.status==='Afgerond'?'taskCompletedRow':''}">
       <td>
         <strong>${escHtml(task.title)}</strong>
-        ${task.description?`<span class="subtle taskDescriptionPreview">${escHtml(task.description)}</span>`:''}
+        ${taskVisibleDescription(task.description)?`<span class="subtle taskDescriptionPreview">${escHtml(taskVisibleDescription(task.description))}</span>`:''}
       </td>
       <td>${property?`<button class="miniLink detailBtn" data-id="${property.id}">${escHtml(property.object)}</button><span class="subtle">${escHtml([property.straatnaam,property.huisnummer,property.stad].filter(Boolean).join(' '))}</span>`:'<span class="subtle">Niet gekoppeld</span>'}</td>
       <td>${statusBadge(due)}${task.due_date?`<span class="subtle">${dateFmt(task.due_date)}</span>`:''}</td>
@@ -3234,6 +3348,7 @@ function openTaskModal(taskId='',propertyId=''){
 
   const task=taskId?rawTasks.find(item=>item.id===taskId):null;
   el('taskForm').reset();
+  el('taskForm').dataset.notificationOccurrence=taskNotificationOccurrence(task)||'';
   el('taskId').value=task?.id||'';
   el('taskModalTitle').textContent=task?'Taak bewerken':'Taak toevoegen';
   el('taskTitle').value=task?.title||'';
@@ -3241,7 +3356,7 @@ function openTaskModal(taskId='',propertyId=''){
   el('taskDueDate').value=task?.due_date||'';
   el('taskPriority').value=task?.priority||'Normaal';
   el('taskStatus').value=task?.status||'Open';
-  el('taskDescription').value=task?.description||'';
+  el('taskDescription').value=taskVisibleDescription(task?.description);
   el('deleteTaskBtn').classList.toggle('hidden',!task);
   el('taskMessage').textContent='';
   el('taskModal').classList.remove('hidden');
@@ -3258,10 +3373,11 @@ async function saveTask(event){
 
   const id=el('taskId').value;
   const status=el('taskStatus').value;
+  const notificationOccurrence=el('taskForm').dataset.notificationOccurrence||'';
   const payload={
     property_id:el('taskPropertyId').value||null,
     title:clean(el('taskTitle').value),
-    description:clean(el('taskDescription').value)||null,
+    description:appendTaskNotificationOccurrence(clean(el('taskDescription').value),notificationOccurrence),
     due_date:el('taskDueDate').value||null,
     priority:el('taskPriority').value,
     status,
@@ -7355,7 +7471,7 @@ function ensureProfessionalUx(){
 
 
 
-/* v40.42.8 — Eenvoudige, esthetische en slimme werklaag */
+/* v40.42.9 — Taken ronden gekoppelde dashboardmeldingen automatisch af */
 function simpleSmartIcon(name){
   const icons={
     spark:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.3 4.2L17.5 9l-4.2 1.3L12 14.5l-1.3-4.2L6.5 9l4.2-1.8L12 3z"></path><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"></path></svg>',
@@ -7475,6 +7591,7 @@ function openSimpleSmartTask(notificationKey){
   const item=notificationItems(filtered()).find(row=>dashboardNotificationKey(row)===notificationKey);
   if(!item) return;
   openTaskModal('',item.objectId||'');
+  el('taskForm').dataset.notificationOccurrence=notificationOccurrenceKey(item);
   const title=el('taskTitle');
   const priority=el('taskPriority');
   const due=el('taskDueDate');
