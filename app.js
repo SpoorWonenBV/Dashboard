@@ -2729,6 +2729,7 @@ function setPage(pageId, title){
   el(pageId).classList.add('active');
   document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active', n.dataset.page===pageId));
   el('pageTitle').textContent=title || pageId;
+  syncProfessionalNavigation(pageId);
 
   const maintenanceCsvButton=el('chooseMaintenanceCsvBtn');
   if(maintenanceCsvButton) maintenanceCsvButton.classList.toggle('hidden', pageId!=='onderhoud'||activeMaintenanceTab!=='maintenance');
@@ -6678,11 +6679,19 @@ function render(){
   if(el('openTaskCount')) el('openTaskCount').textContent=rawTasks.filter(task=>task.status!=='Afgerond').length;
   if(el('tenantIssueCount')) el('tenantIssueCount').textContent=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
   if(el('tenantReportTabCount')) el('tenantReportTabCount').textContent=rawTenantIssueReports.filter(report=>report.status==='Nieuw').length;
-  el('attentionList').innerHTML=notes.slice(0,10).map(actionHtml).join('') || '<p>Geen aandachtspunten gevonden.</p>';
+  const dashboardAttentionLimit=6;
+  const dashboardAttentionHtml=notes.slice(0,dashboardAttentionLimit).map(actionHtml).join('');
+  const dashboardAttentionMore=notes.length>dashboardAttentionLimit
+    ? `<div class="dashboardAttentionFooter"><span>${notes.length-dashboardAttentionLimit} extra openstaande melding${notes.length-dashboardAttentionLimit===1?'':'en'}</span><button type="button" class="dashboardAttentionAllBtn">Bekijk alle ${notes.length}</button></div>`
+    : '';
+  el('attentionList').innerHTML=dashboardAttentionHtml
+    ? dashboardAttentionHtml+dashboardAttentionMore
+    : '<div class="professionalEmptyState"><strong>Alles is bijgewerkt</strong><span>Er zijn op dit moment geen openstaande aandachtspunten.</span></div>';
+  updateProfessionalDashboardSummary(notes);
   el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
   updateNotificationCenterBell(notes);
   if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
-  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard premiumObjectCard"><div class="objectCardHeader"><div class="objectCardTitleWrap"><h3>${escHtml(r.object)}</h3><div class="meta">${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</div></div><span class="objectTypePill">${escHtml(r.type||'Object')}</span></div><div class="objectCardFacts"><div class="row"><span>Huurder</span><strong>${escHtml(r.huurder)}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div></div><div class="objectCardActions"><button class="smallBtn detailBtn primaryObjectAction" data-id="${r.id}">Details</button><button class="smallBtn issueQrBtn secondaryObjectAction" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn secondaryObjectAction" data-id="${r.id}">Bewerken</button></div></article>`).join('') || '<p class="premiumEmptyState">Geen objecten gevonden.</p>';
+  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard premiumObjectCard"><div class="objectCardHeader"><div class="objectCardTitleWrap"><h3>${escHtml(r.object)}</h3><div class="meta">${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</div></div><span class="objectTypePill">${escHtml(r.type||'Object')}</span></div><div class="objectCardFacts"><div class="row"><span>Huurder</span><strong>${escHtml(r.huurder)}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div></div><div class="objectCardActions"><button class="smallBtn detailBtn primaryObjectAction" data-id="${r.id}">Open object</button><button class="smallBtn issueQrBtn secondaryObjectAction" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn secondaryObjectAction" data-id="${r.id}">Bewerken</button></div></article>`).join('') || '<p class="premiumEmptyState">Geen objecten gevonden.</p>';
   refreshPhotos();
   renderContractOverview(contractPageData);
   renderFinancialPage(data);
@@ -7123,6 +7132,226 @@ function ensurePremiumDashboardUi(){
   }
 }
 
+
+const PROFESSIONAL_UX_NAV_ITEMS=[
+  {key:'dashboard',labels:['dashboard'],icon:'home'},
+  {key:'objecten',labels:['object'],icon:'building'},
+  {key:'onderhoud',labels:['onderhoud'],icon:'tool'},
+  {key:'meldingen',labels:['melding'],icon:'bell'}
+];
+
+function professionalUxIcon(name){
+  const icons={
+    home:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"></path></svg>',
+    building:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V5l10-2v18M5 9h10M5 13h10M5 17h10M15 9h4v12H3"></path></svg>',
+    tool:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.3 4.3 0 0 0-5.6 5.6L4.8 16.2a2.1 2.1 0 1 0 3 3l4.3-4.3a4.3 4.3 0 0 0 5.6-5.6l-2.8 2.8-3-3 2.8-2.8z"></path></svg>',
+    bell:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 5 2 5.6 2 7h-15c0-1.4 2-2 2-7z"></path><path d="M9.5 19a2.8 2.8 0 0 0 5 0"></path></svg>',
+    plus:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>',
+    check:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.5"></path></svg>',
+    search:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>'
+  };
+  return icons[name]||icons.home;
+}
+
+function findProfessionalNav(labels){
+  return [...document.querySelectorAll('.nav')].find(button=>{
+    const text=norm(`${button.dataset.title||''} ${button.textContent||''}`);
+    return labels.some(label=>text.includes(norm(label)));
+  })||null;
+}
+
+function setupProfessionalMobileNav(){
+  if(document.getElementById('professionalMobileNav')) return;
+  const found=PROFESSIONAL_UX_NAV_ITEMS.map(item=>({...item,source:findProfessionalNav(item.labels)})).filter(item=>item.source);
+  if(found.length<3) return;
+  const bar=document.createElement('nav');
+  bar.id='professionalMobileNav';
+  bar.className='professionalMobileNav';
+  bar.setAttribute('aria-label','Snelle navigatie');
+  bar.innerHTML=found.map(item=>`<button type="button" class="professionalMobileNavBtn" data-mobile-page="${escAttr(item.source.dataset.page||'')}" data-source-page="${escAttr(item.source.dataset.page||'')}"><span class="professionalMobileNavIcon">${professionalUxIcon(item.icon)}</span><span>${escHtml(item.source.dataset.title||item.source.textContent.trim())}</span></button>`).join('');
+  document.body.appendChild(bar);
+  bar.addEventListener('click',event=>{
+    const button=event.target.closest('.professionalMobileNavBtn');
+    if(!button) return;
+    const source=[...document.querySelectorAll('.nav')].find(nav=>nav.dataset.page===button.dataset.sourcePage);
+    source?.click();
+  });
+}
+
+function syncProfessionalNavigation(pageId){
+  document.querySelectorAll('.professionalMobileNavBtn').forEach(button=>{
+    const active=button.dataset.mobilePage===pageId;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-current',active?'page':'false');
+  });
+}
+
+function setupProfessionalHeader(){
+  const headerActions=document.querySelector('.headerActions');
+  const bell=el('dashboardNotificationBell');
+  if(headerActions&&bell&&!headerActions.contains(bell)){
+    bell.classList.add('dashboardNotificationBell--inline');
+    headerActions.prepend(bell);
+  }
+  const search=el('search');
+  if(search){
+    if(!search.placeholder||norm(search.placeholder).includes('zoek')) search.placeholder='Zoek object, huurder, adres of plaats…';
+    search.setAttribute('aria-label','Zoeken in het dashboard');
+    search.title='Zoeken in het dashboard · sneltoets /';
+  }
+}
+
+function setupProfessionalDashboardCommandBar(){
+  const dashboard=el('dashboard');
+  if(!dashboard||document.getElementById('professionalDashboardCommandBar')) return;
+  const cards=dashboard.querySelector('.cards');
+  const bar=document.createElement('section');
+  bar.id='professionalDashboardCommandBar';
+  bar.className='professionalDashboardCommandBar';
+  const now=new Date();
+  const dateLabel=new Intl.DateTimeFormat('nl-NL',{weekday:'long',day:'numeric',month:'long'}).format(now);
+  bar.innerHTML=`
+    <div class="professionalTodayCopy"><span class="professionalEyebrow">Vandaag</span><strong>${escHtml(dateLabel.charAt(0).toUpperCase()+dateLabel.slice(1))}</strong><span id="professionalTodaySummary">Dashboard wordt bijgewerkt…</span></div>
+    <div class="professionalQuickActions" aria-label="Snelle acties">
+      <button type="button" class="professionalQuickBtn professionalQuickBtn--primary" data-professional-action="new-object"><span>${professionalUxIcon('plus')}</span>Nieuw object</button>
+      <button type="button" class="professionalQuickBtn" data-professional-action="new-task"><span>${professionalUxIcon('check')}</span>Nieuwe taak</button>
+      <button type="button" class="professionalQuickBtn" data-professional-action="notifications"><span>${professionalUxIcon('bell')}</span>Meldingen</button>
+    </div>`;
+  if(cards) cards.insertAdjacentElement('afterend',bar);
+  else dashboard.prepend(bar);
+  bar.addEventListener('click',event=>{
+    const button=event.target.closest('[data-professional-action]');
+    if(!button) return;
+    const action=button.dataset.professionalAction;
+    if(action==='new-object') el('newPropertyBtn')?.click();
+    if(action==='new-task') el('newTaskBtn')?.click();
+    if(action==='notifications') openNotificationCenter({scope:'all'});
+  });
+}
+
+function updateProfessionalDashboardSummary(notes=[]){
+  const summary=el('professionalTodaySummary');
+  if(!summary) return;
+  const urgent=notes.filter(item=>item.sev==='danger').length;
+  const tenants=notes.filter(item=>item.reportId).length;
+  if(!notes.length){
+    summary.textContent='Geen openstaande acties. Alles staat op orde.';
+    summary.className='is-clear';
+    return;
+  }
+  const parts=[];
+  if(urgent) parts.push(`${urgent} urgent${urgent===1?'':'e'} actie${urgent===1?'':'s'}`);
+  if(tenants) parts.push(`${tenants} huurdersmelding${tenants===1?'':'en'}`);
+  const remaining=Math.max(0,notes.length-urgent-tenants);
+  if(remaining) parts.push(`${remaining} overige melding${remaining===1?'':'en'}`);
+  summary.textContent=parts.join(' · ');
+  summary.className=urgent?'has-urgent':'';
+}
+
+function setupInteractiveMetricCard(valueId,handler,label){
+  const value=el(valueId);
+  const card=value?.closest('.card');
+  if(!card||card.dataset.professionalInteractive==='true') return;
+  card.dataset.professionalInteractive='true';
+  card.classList.add('professionalMetricCard');
+  card.tabIndex=0;
+  card.setAttribute('role','button');
+  card.setAttribute('aria-label',label);
+  card.addEventListener('click',handler);
+  card.addEventListener('keydown',event=>{
+    if(event.key==='Enter'||event.key===' '){event.preventDefault();handler();}
+  });
+}
+
+function setupProfessionalMetricCards(){
+  setupInteractiveMetricCard('urgentCount',()=>openNotificationCenter({scope:'all'}),'Open urgente meldingen');
+  setupInteractiveMetricCard('contractSoon',()=>findProfessionalNav(['contract'])?.click(),'Open contracten');
+  setupInteractiveMetricCard('maintenanceSoon',()=>findProfessionalNav(['onderhoud'])?.click(),'Open onderhoud');
+  setupInteractiveMetricCard('tenantIssueCount',()=>findProfessionalNav(['melding'])?.click(),'Open huurdersmeldingen');
+}
+
+function setupProfessionalKeyboardShortcuts(){
+  if(window.__professionalKeyboardShortcutsBound) return;
+  window.__professionalKeyboardShortcutsBound=true;
+  document.addEventListener('keydown',event=>{
+    const target=event.target;
+    const typing=target&&(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable);
+    if(event.key==='/'&&!typing&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
+      event.preventDefault();
+      el('search')?.focus();
+      return;
+    }
+    if(event.key==='Escape'){
+      if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')){closeNotificationCenter();return;}
+      if(document.activeElement===el('search')&&el('search').value){
+        el('search').value='';query='';render();
+      }
+    }
+  });
+}
+
+function bindProfessionalDelegatedActions(){
+  if(window.__professionalDelegatedActionsBound) return;
+  window.__professionalDelegatedActionsBound=true;
+  document.body.addEventListener('click',event=>{
+    if(event.target.closest('.dashboardAttentionAllBtn')) openNotificationCenter({scope:'all'});
+  });
+}
+
+function ensureProfessionalUx(){
+  if(!document.getElementById('professionalUxStyles')){
+    const style=document.createElement('style');
+    style.id='professionalUxStyles';
+    style.textContent=`
+      :root{--pro-control-height:44px;--pro-bottom-nav-height:72px}
+      button{font-family:inherit}
+      button:not(:disabled){cursor:pointer}
+      input:not([type=checkbox]):not([type=radio]),select,textarea{border-radius:10px!important;border-color:#cbd5e1!important;background:#fff!important;color:#172033!important;transition:border-color .14s ease,box-shadow .14s ease!important}
+      input:not([type=checkbox]):not([type=radio]),select{min-height:var(--pro-control-height)}
+      textarea{min-height:104px;line-height:1.5}
+      input:focus,select:focus,textarea:focus{outline:0!important;border-color:#94a3b8!important;box-shadow:0 0 0 3px rgba(56,189,248,.16)!important}
+      label{color:#334155;font-weight:700}
+      .formActions{gap:9px!important}
+      .modalCard .formActions{position:sticky;bottom:0;z-index:4;margin-left:-20px!important;margin-right:-20px!important;margin-bottom:-20px!important;padding:14px 20px 18px!important;border-top:1px solid #e2e8f0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
+      .dashboardNotificationBell.dashboardNotificationBell--inline{position:relative!important;right:auto!important;top:auto!important;z-index:auto!important;width:44px!important;height:44px!important;min-width:44px!important;box-shadow:0 1px 2px rgba(15,23,42,.05)!important;order:-2}
+      .dashboardNotificationBell--inline .dashboardNotificationBellBadge{right:-5px;top:-6px}
+      .professionalDashboardCommandBar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:14px 0 18px;padding:16px 18px;border:1px solid #dce4ed;border-radius:14px;background:linear-gradient(135deg,#fff,#f8fafc);box-shadow:0 1px 2px rgba(15,23,42,.03)}
+      .professionalTodayCopy{display:grid;gap:2px;min-width:0}.professionalEyebrow{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#64748b}.professionalTodayCopy>strong{font-size:16px;color:#172033}.professionalTodayCopy>span:last-child{font-size:12px;color:#64748b;line-height:1.4}.professionalTodayCopy>span.has-urgent{color:#b91c1c;font-weight:800}.professionalTodayCopy>span.is-clear{color:#15803d;font-weight:800}
+      .professionalQuickActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.professionalQuickBtn{min-height:40px!important;padding:8px 12px!important;display:inline-flex!important;align-items:center;justify-content:center;gap:7px;border:1px solid #cbd5e1!important;border-radius:9px!important;background:#fff!important;color:#172033!important;font-size:12px!important;font-weight:800!important;box-shadow:0 1px 2px rgba(15,23,42,.03)}.professionalQuickBtn>span{display:grid;place-items:center}.professionalQuickBtn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.professionalQuickBtn--primary{background:var(--brand-primary)!important;border-color:var(--brand-primary)!important;color:#fff!important}.professionalQuickBtn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(15,23,42,.08)}
+      .professionalMetricCard{transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease!important}.professionalMetricCard:hover{transform:translateY(-2px);border-color:#cbd5e1!important;box-shadow:0 8px 24px rgba(15,23,42,.075)!important}.professionalMetricCard:focus-visible{outline:3px solid rgba(56,189,248,.45);outline-offset:2px}
+      .dashboardAttentionFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;font-weight:700}.dashboardAttentionAllBtn{min-height:36px!important;padding:7px 11px!important;border:1px solid #cbd5e1!important;border-radius:8px!important;background:#fff!important;color:#172033!important;font-size:12px!important;font-weight:800!important;white-space:nowrap}
+      .professionalEmptyState{display:grid;gap:4px;padding:24px 18px;border:1px dashed #cbd5e1;border-radius:12px;background:#fbfcfd;text-align:center}.professionalEmptyState strong{color:#166534;font-size:14px}.professionalEmptyState span{color:#64748b;font-size:12px}
+      .pageFilters,.maintenanceFilters,.taskFilterBar{align-items:flex-end!important}.pageFilters label,.maintenanceFilters label,.taskFilterBar label{font-size:11px!important;color:#526174!important}.clearPageFiltersBtn{min-height:40px!important}
+      .objectCardActions .primaryObjectAction{font-weight:850!important}
+      .contractTableWrap,.financialTableWrap,.notificationLogWrap,.maintenanceObjectTableWrap{scrollbar-gutter:stable}
+      .contractTableWrap::-webkit-scrollbar,.financialTableWrap::-webkit-scrollbar,.notificationLogWrap::-webkit-scrollbar,.maintenanceObjectTableWrap::-webkit-scrollbar{height:10px}.contractTableWrap::-webkit-scrollbar-thumb,.financialTableWrap::-webkit-scrollbar-thumb,.notificationLogWrap::-webkit-scrollbar-thumb,.maintenanceObjectTableWrap::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px;border:2px solid #fff}
+      .professionalMobileNav{display:none}
+      @media(max-width:900px){
+        body{padding-bottom:calc(var(--pro-bottom-nav-height) + env(safe-area-inset-bottom,0px))!important}
+        .professionalMobileNav{position:fixed;left:8px;right:8px;bottom:8px;z-index:9990;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;min-height:64px;padding:6px;border:1px solid rgba(203,213,225,.9);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 14px 45px rgba(15,23,42,.2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+        .professionalMobileNavBtn{position:relative;min-width:0!important;min-height:52px!important;padding:5px 4px!important;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0!important;border-radius:13px!important;background:transparent!important;color:#64748b!important;font-size:10px!important;font-weight:800!important;overflow:hidden}.professionalMobileNavBtn.active{background:#f1f5f9!important;color:var(--brand-primary)!important}.professionalMobileNavIcon{display:grid;place-items:center}.professionalMobileNavIcon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}
+        .professionalDashboardCommandBar{align-items:flex-start;flex-direction:column}.professionalQuickActions{width:100%;display:grid;grid-template-columns:1fr 1fr}.professionalQuickBtn:first-child{grid-column:1/-1}.professionalQuickBtn{width:100%}
+        .dashboardAttentionFooter{align-items:flex-start;flex-direction:column}.dashboardAttentionAllBtn{width:100%}
+        .modalCard .formActions{padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))!important}
+        .dashboardNotificationBell.dashboardNotificationBell--inline{width:42px!important;height:42px!important;min-width:42px!important}
+      }
+      @media(max-width:520px){
+        .professionalDashboardCommandBar{padding:14px}.professionalQuickActions{grid-template-columns:1fr}.professionalQuickBtn:first-child{grid-column:auto}.main>header{gap:12px}.headerActions{width:100%}.headerActions>button:not(.dashboardNotificationBell){flex:1 1 auto}
+      }
+      @media(prefers-reduced-motion:reduce){.professionalQuickBtn,.professionalMetricCard{transition:none!important}.professionalQuickBtn:hover,.professionalMetricCard:hover{transform:none!important}}
+    `;
+    document.head.appendChild(style);
+  }
+  setupProfessionalHeader();
+  setupProfessionalDashboardCommandBar();
+  setupProfessionalMetricCards();
+  setupProfessionalMobileNav();
+  setupProfessionalKeyboardShortcuts();
+  bindProfessionalDelegatedActions();
+  const active=document.querySelector('.page.active');
+  if(active?.id) syncProfessionalNavigation(active.id);
+}
+
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
@@ -7133,6 +7362,7 @@ function init(){
   ensureTenantReportUi();
   ensureNotificationCenterUi();
   ensurePremiumDashboardUi();
+  ensureProfessionalUx();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
