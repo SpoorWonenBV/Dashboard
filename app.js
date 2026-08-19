@@ -3048,7 +3048,12 @@ function notificationItems(data){
     const contractDays=timeline.endDays;
     const maintenanceDays=daysUntil(r.scope_inspectie_geldig_tot);
     const energyDays=daysUntil(r.energielabel_geldig_tot);
-    const rentIncreaseDays=daysUntilRentIncrease(r.maand_huurverhoging);
+    // Gebruik de eerstvolgende nog niet verwerkte huurverhoging.
+    // rentIncreaseEffectiveDate() schuift automatisch een jaar door zodra de
+    // verhoging (of 'niet verhogen') voor de huidige cyclus is verwerkt.
+    // Zo blijft een afgeronde huurverhoging niet als open melding staan.
+    const rentIncreaseDate=rentIncreaseEffectiveDate(r);
+    const rentIncreaseDays=rentIncreaseDate?daysUntil(rentIncreaseDate):null;
     const isVacant=String(r.status||'').toLowerCase().includes('leeg') || String(r.huurder||'').trim()==='-';
 
     if(isVacant) items.push(actionItem('danger','Leegstand',`Geen huurder: ${r.object}`,'Controleer of dit object leegstaat of koppel een huurder.',r.id));
@@ -3102,8 +3107,8 @@ function notificationItems(data){
     }
 
     if(rentIncreaseDays!==null){
-      if(rentIncreaseDays<=30) items.push(actionItem('danger','Huurverhoging',`Huurverhoging deze maand: ${r.object}`,`Maand huurverhoging: ${r.maand_huurverhoging}.`,r.id));
-      else if(rentIncreaseDays<=60) items.push(actionItem('warning','Huurverhoging',`Huurverhoging binnen 60 dagen`,`${r.object}: maand ${r.maand_huurverhoging}.`,r.id));
+      if(rentIncreaseDays<=30) items.push(actionItem('danger','Huurverhoging',`Huurverhoging deze maand: ${r.object}`,`Ingangsdatum: ${dateFmt(rentIncreaseDate)} · maand ${r.maand_huurverhoging}.`,r.id));
+      else if(rentIncreaseDays<=60) items.push(actionItem('warning','Huurverhoging',`Huurverhoging binnen 60 dagen`,`${r.object}: ingangsdatum ${dateFmt(rentIncreaseDate)} · maand ${r.maand_huurverhoging}.`,r.id));
     }
   });
   const allowedIds=new Set(data.map(item=>item.id));
