@@ -2871,6 +2871,7 @@ function setPage(pageId, title){
     setFinancialTab(activeFinancialTab);
   }
 
+  updateUxPageContextV404215(pageId);
   requestAnimationFrame(()=>updateContractStickyHeader());
 }
 
@@ -4297,7 +4298,7 @@ function actionHtml(n){
     <div class="notificationCardHeader"><span class="notificationIcon" aria-hidden="true">${visual.icon}</span><span class="notificationSource">${visual.label}</span><span class="typeTag">${escHtml(n.type)}</span></div>
     <strong class="notificationTitle">${escHtml(n.title)}</strong>
     <span class="notificationText">${escHtml(n.text)}</span>
-    ${actions.length?`<div class="notificationActions">${actions.join('')}</div>`:''}
+    ${actions.length?`<div class="uxNextStepLabel">Wat kun je nu doen?</div><div class="notificationActions">${actions.join('')}</div>`:''}
   </div>`;
 }
 function isVacant(r){ return String(r.status||'').toLowerCase().includes('leeg') || r.huurder==='-'; }
@@ -6851,10 +6852,12 @@ function render(){
     : '<div class="professionalEmptyState"><strong>Alles is bijgewerkt</strong><span>Er zijn op dit moment geen openstaande aandachtspunten.</span></div>';
   updateProfessionalDashboardSummary(notes);
   updateSimpleSmartDashboard(notes);
-  el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<p>Geen meldingen gevonden voor dit onderwerp.</p>';
+  updateUxDashboardV404215(notes);
+  el('notificationList').innerHTML=visibleNotifications.map(actionHtml).join('') || '<div class="uxEmptyFriendly"><strong>Geen openstaande meldingen</strong><span>Alles binnen dit filter is bijgewerkt.</span></div>';
   updateNotificationCenterBell(notes);
   if(el('notificationCenterModal')&&!el('notificationCenterModal').classList.contains('hidden')) renderNotificationCenter();
-  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard premiumObjectCard"><div class="objectCardHeader"><div class="objectCardTitleWrap"><h3>${escHtml(r.object)}</h3><div class="meta">${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</div></div><span class="objectTypePill">${escHtml(r.type||'Object')}</span></div><div class="objectCardFacts"><div class="row"><span>Huurder</span><strong>${escHtml(r.huurder)}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div></div><div class="objectCardActions"><button class="smallBtn detailBtn primaryObjectAction" data-id="${r.id}">Open object</button><button class="smallBtn issueQrBtn secondaryObjectAction" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn secondaryObjectAction" data-id="${r.id}">Bewerken</button></div></article>`).join('') || '<p class="premiumEmptyState">Geen objecten gevonden.</p>';
+  el('objectGrid').innerHTML=objectPageData.map(r=>`<article class="objectCard premiumObjectCard" data-object-card-id="${escAttr(r.id)}"><div class="objectCardHeader"><div class="objectCardTitleWrap"><h3>${escHtml(r.object)}</h3><div class="meta">${escHtml([r.straatnaam,r.huisnummer,r.stad].filter(Boolean).join(' '))}</div></div><span class="objectTypePill">${escHtml(r.type||'Object')}</span></div><div class="objectCardFacts"><div class="row"><span>Huurder</span><strong>${escHtml(r.huurder)}</strong></div><div class="row"><span>Huur p/m</span><strong>${euro(r.huur_pm)}</strong></div><div class="row"><span>Jaarhuur</span><strong>${euro(r.huur_pj)}</strong></div><div class="row"><span>Bruto rendement</span><strong>${r.bruto_rendement===null?'-':pct(r.bruto_rendement)}</strong></div><div class="row"><span>Contract</span>${statusBadge(r.status_contract)}</div><div class="row"><span>Onderhoud</span>${statusBadge(r.status_scope)}</div></div><div class="objectCardActions"><button class="smallBtn detailBtn primaryObjectAction" data-id="${r.id}">Open object</button><button class="smallBtn issueQrBtn secondaryObjectAction" data-id="${r.id}">QR-code</button><button class="smallBtn editBtn secondaryObjectAction" data-id="${r.id}">Bewerken</button></div></article>`).join('') || '<div class="uxEmptyFriendly"><strong>Geen objecten gevonden</strong><span>Pas je zoekopdracht of filters aan.</span></div>';
+  enhanceObjectCardsUxV404215(notes);
   refreshPhotos();
   renderContractOverview(contractPageData);
   renderFinancialPage(data);
@@ -6968,6 +6971,7 @@ function renderDetail(id){
   const scope10=objectInspectionSummary(r.id,'SCOPE 10');
   const scope12=objectInspectionSummary(r.id,'SCOPE 12');
   el('detailContent').innerHTML=`<div class="detailHero"><div class="detailHeroTop"><div><h2>${r.object}</h2><p class="meta">${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')} • ${r.type} • ${r.status}</p></div><div class="detailActions"><button class="secondaryBtn issueQrBtn" data-id="${r.id}">QR-code melding</button><button class="secondaryBtn editBtn" data-id="${r.id}">Bewerken</button></div></div></div><div class="detailGrid"><section class="detailSection"><h3>Algemeen</h3>${kv('Adres',`${r.straatnaam} ${r.huisnummer}`)}${kv('Postcode',r.postcode||'-')}${kv('Stad',r.stad)}${kv('Type',r.type)}${kv('Status',r.status)}${kv('Energielabel verplicht',r.energielabel_verplicht?'Ja':'Nee')}${kv('Energielabel',r.energielabel_verplicht?r.energielabel:'Niet verplicht')}${kv('Energielabel geldig tot',r.energielabel_verplicht?dateFmt(r.energielabel_geldig_tot):'-')}${kv('Status energielabel',statusBadge(r.status_energy))}${kv('SCOPE 10 geldig / volgende',scope10.date)}${kv('Status SCOPE 10',statusBadge(scope10.status))}${kv('SCOPE 12 geldig / volgende',scope12.date)}${kv('Status SCOPE 12',statusBadge(scope12.status))}</section><section class="detailSection"><h3>Financieel</h3>${kv('Maandhuur',euro(r.huur_pm))}${kv('Jaarhuur',euro(r.huur_pj))}${kv('Servicekosten',euro(r.servicekosten))}${kv('Energiekosten',euro(r.energiekosten))}${kv('Waarborgsom',euro(r.waarborgsom))}${kv('Concerngarantie',euro(r.concerngarantie))}${kv('Bankgarantie',euro(r.bankgarantie))}${kv('Aankoopwaarde',euro(r.aankoopwaarde))}${kv('WOZ-waarde',euro(r.woz_waarde))}${kv('Hypotheekschuld',euro(r.hypotheek))}${kv('Overwaarde',euro(r.overwaarde))}${kv('Hypotheekrente',r.hypotheekrente?`${String(r.hypotheekrente).replace('.', ',')}%`:'-')}${kv('Aankoopdatum',dateFmt(r.aankoopdatum))}${kv('Bruto rendement',r.bruto_rendement===null?'-':pct(r.bruto_rendement))}${kv('Huurverhoging',r.maand_huurverhoging||'-')}</section><section class="detailSection"><h3>Huurder</h3>${r.huurder==='-'?'<p class="empty">Geen huurder gekoppeld.</p>':`${kv('Naam',r.huurder)}${kv('E-mail',r.email||'-')}${kv('Telefoon',r.telefoon||'-')}`}</section><section class="detailSection"><h3>Correspondentie / factuur</h3>${(r.factuur_naam||r.factuur_adres||r.factuur_huisnummer||r.factuur_postcode||r.factuur_stad)?`${kv('Ontvanger',r.factuur_naam||r.huurder||'-')}${kv('Adres',[r.factuur_adres||r.straatnaam,r.factuur_huisnummer||r.huisnummer].filter(Boolean).join(' ')||'-')}${kv('Postcode en plaats',[r.factuur_postcode||r.postcode,r.factuur_stad||r.stad].filter(Boolean).join(' ')||'-')}`:'<p class="empty">De huurder en het adres van het gehuurde object worden gebruikt.</p>'}</section><section class="detailSection"><h3>Contract</h3>${kv('Contractstatus',statusBadge([r.contract_status,r.contract_opgezegd?'warning':'ok']))}${kv('Startdatum',dateFmt(r.startdatum_contract))}${kv('Oorspronkelijke einddatum',r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract))}${r.aantal_verlengingen?kv('Huidige einddatum',dateFmt(r.einddatum_contract)):''}${kv('Opzegtermijn',contractPeriodText(r))}${kv('Uiterste opzegdatum',r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))}${kv('Verlenging bij niet-opzeggen',renewalText(r))}${r.aantal_verlengingen?kv('Verlengingen toegepast',`${r.aantal_verlengingen}×`):''}${kv('Status contract',statusBadge(r.status_contract))}${kv('Status opzegmoment',statusBadge(r.status_opzeg))}${r.opzegdatum_afwijking?`<div class="contractDetailNotice"><strong>Controle nodig</strong>De ingevoerde opzegdatum wijkt af van ${r.opzegtermijn_maanden} maanden vóór de oorspronkelijke einddatum. Berekende datum: ${dateFmt(r.contract_timeline.calculatedInitialNotice)}.</div>`:''}${r.aantal_verlengingen?`<div class="contractDetailNotice warning"><strong>Automatische verlenging</strong>Het oorspronkelijke opzegmoment is verstreken. Het contract is ${r.aantal_verlengingen}× met ${r.verlenging_jaren} jaar verlengd. De huidige einddatum is ${dateFmt(r.einddatum_contract)}${r.contract_opgezegd?'. Het contract is binnen deze verlengde periode opgezegd.':` en de volgende uiterste opzegdatum is ${dateFmt(r.opzegdatum)}.`}</div>`:''}</section><section class="detailSection fullSpan"><h3>Huurdersmeldingen</h3>${tenantReportsForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Taken</h3>${taskListForPropertyHtml(r.id)}</section><section class="detailSection fullSpan"><h3>Documenten</h3>${documentListHtml(r)}</section><section class="detailSection fullSpan"><h3>Onderhoudshistorie</h3>${maintenanceHistoryHtml(r)}</section></div>`;
+  enhanceDetailUxV404215(r);
   setPage('detail', r.object);
   refreshPhotos();
 }
@@ -7841,6 +7845,213 @@ function ensureSmartQuestionSearchUi(){
   if(!window.__smartAskBound){window.__smartAskBound=true;document.body.addEventListener('click',e=>{if(e.target.closest('#smartAskLaunch')){openSmartQuestionSearch();return;}if(e.target.closest('.smartAskClose')||e.target===el('smartAskModal')){closeSmartQuestionSearch();return;}const example=e.target.closest('.smartAskExample');if(example){const q=example.dataset.question||'';if(el('smartAskDashboardInput'))el('smartAskDashboardInput').value=q;openSmartQuestionSearch(q);return;}if(e.target.closest('#smartAskDashboardBtn')){openSmartQuestionSearch(el('smartAskDashboardInput')?.value||'');return;}const open=e.target.closest('.smartAskOpenObject');if(open){closeSmartQuestionSearch();renderDetail(open.dataset.id);}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSmartQuestionSearch();}if(e.key==='Escape'&&!el('smartAskModal')?.classList.contains('hidden'))closeSmartQuestionSearch();});el('smartAskForm')?.addEventListener('submit',e=>{e.preventDefault();renderSmartQuestionResults(el('smartAskInput')?.value||'');});el('smartAskDashboardInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();openSmartQuestionSearch(e.currentTarget.value);}});}
 }
 
+
+
+/* v40.42.15: UX cleanup — rustig, begrijpelijk en zonder externe AI */
+const UX_PAGE_CONTEXT_V404215={
+  dashboard:{eyebrow:'Vandaag',title:'Wat vraagt nu aandacht?',text:'Het dashboard zet urgente zaken automatisch bovenaan. Afgeronde zaken verdwijnen uit het overzicht.',action:'meldingen',actionLabel:'Bekijk meldingen'},
+  objecten:{eyebrow:'Beheer',title:'Objecten',text:'Zoek een object, open de details of voeg een nieuw object toe. Financiële details staan in het object zelf.',action:'newProperty',actionLabel:'Nieuw object'},
+  contracten:{eyebrow:'Bewaking',title:'Contracten',text:'Opzegmomenten, einddata en automatische verlengingen worden voor je berekend. Controleer vooral wat binnenkort actie vraagt.',action:'meldingen',actionLabel:'Bekijk contractmeldingen'},
+  onderhoud:{eyebrow:'Planning',title:'Onderhoud & keuringen',text:'Zet uitgevoerd werk op Afgerond en registreer een nieuwe keuringsdatum. Oude waarschuwingen verdwijnen daarna automatisch.',action:'newMaintenance',actionLabel:'Onderhoud toevoegen'},
+  meldingen:{eyebrow:'Acties',title:'Openstaande meldingen',text:'Een melding blijft alleen staan zolang er echt nog iets moet gebeuren. Afgeronde taken en verwerkte acties verdwijnen automatisch.',action:'newTask',actionLabel:'Nieuwe taak'},
+  taken:{eyebrow:'Werkvoorraad',title:'Taken',text:'Werk van boven naar beneden. Te late en urgente taken staan automatisch hoger. Afgeronde taken verdwijnen uit de standaardweergave.',action:'newTask',actionLabel:'Nieuwe taak'},
+  financieel:{eyebrow:'Financieel',title:'Huur & servicekosten',text:'Controleer voorstellen eerst. Huurverhogingen worden pas verwerkt na jouw bevestiging en verdwijnen daarna uit de meldingen.',action:null,actionLabel:''},
+  instellingen:{eyebrow:'Beheer',title:'Instellingen',text:'Pas hier alleen algemene dashboardinstellingen aan. Operationele acties voer je uit bij het betreffende object.',action:null,actionLabel:''},
+  detail:{eyebrow:'Object',title:'Objectoverzicht',text:'Alle gegevens van één object op één plek. Bovenaan zie je direct of er iets moet gebeuren.',action:null,actionLabel:''}
+};
+
+function uxIconV404215(name){
+  const icons={
+    check:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"></path></svg>',
+    bell:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10a5 5 0 0 1 10 0c0 4 2 5 2 6H5c0-1 2-2 2-6z"></path><path d="M10 19h4"></path></svg>',
+    building:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5l8-3v19M12 8h8v13M8 7h.01M8 11h.01M8 15h.01M16 12h.01M16 16h.01"></path></svg>',
+    contract:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7z"></path><path d="M15 3v5h4M10 12h6M10 16h6"></path></svg>',
+    wrench:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a4 4 0 0 0-5 5l-5 5a2 2 0 0 0 3 3l5-5a4 4 0 0 0 5-5l-3 3-2-2z"></path></svg>',
+    user:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c1-4 3-6 7-6s6 2 7 6"></path></svg>',
+    euro:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 7a7 7 0 1 0 0 10M5 10h9M5 14h8"></path></svg>',
+    folder:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"></path></svg>',
+    history:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2-5.3L4 9"></path><path d="M4 4v5h5M12 8v5l3 2"></path></svg>',
+    task:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg>'
+  };
+  return icons[name]||icons.check;
+}
+
+function ensureUxCleanupV404215(){
+  if(!document.getElementById('uxCleanupStylesV404215')){
+    const style=document.createElement('style');
+    style.id='uxCleanupStylesV404215';
+    style.textContent=`
+      :root{--ux-ink:#142033;--ux-muted:#667085;--ux-line:#e6eaf0;--ux-soft:#f8fafc;--ux-good:#16794a;--ux-warn:#b54708;--ux-danger:#b42318;--ux-blue:#175cd3}
+      .main>header{position:sticky;top:0;z-index:7200;margin-left:auto!important;margin-right:auto!important;max-width:1500px;padding-top:14px!important;background:rgba(246,248,251,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+      .page.active{max-width:1500px;margin-left:auto;margin-right:auto}
+      .uxContextBar{max-width:1500px;margin:0 auto 18px;padding:14px 16px;border:1px solid var(--ux-line);border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 1px 2px rgba(16,24,40,.025)}
+      .uxContextMain{min-width:0}.uxContextEyebrow{display:block;margin-bottom:2px;color:var(--ux-blue);font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}.uxContextTitle{display:block;color:var(--ux-ink);font-size:15px;font-weight:850;line-height:1.3}.uxContextText{display:block;margin-top:2px;color:var(--ux-muted);font-size:12px;line-height:1.45}
+      .uxContextAction{flex:0 0 auto;min-height:40px;border:0;border-radius:10px;padding:9px 13px;background:var(--brand-primary,#172033);color:#fff;font:inherit;font-size:12px;font-weight:850;cursor:pointer}.uxContextAction:hover{filter:brightness(.96)}
+      .uxDashboardReadout{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}.uxReadoutCard{min-width:0;padding:13px 14px;border:1px solid var(--ux-line);border-radius:13px;background:#fff}.uxReadoutCard span{display:block;color:var(--ux-muted);font-size:11px;font-weight:750}.uxReadoutCard strong{display:block;margin-top:3px;color:var(--ux-ink);font-size:22px;letter-spacing:-.03em}.uxReadoutCard small{display:block;margin-top:3px;color:var(--ux-muted);font-size:10px;line-height:1.35}.uxReadoutCard.is-danger strong{color:var(--ux-danger)}.uxReadoutCard.is-warning strong{color:var(--ux-warn)}.uxReadoutCard.is-good strong{color:var(--ux-good)}
+      #dashboard .uxLegacyAttentionPanel{display:none!important}.simpleSmartPanel{margin-top:0!important}.simpleSmartPanelHeader{background:#fff!important}.simpleSmartActionCard{padding:15px!important}.simpleSmartActionBody h3{font-size:15px!important}.simpleSmartActionBody p{font-size:12px!important}.simpleSmartActionButtons button{min-height:42px!important}
+      .uxNextStepLabel{margin-top:10px;color:#475467;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.notificationActions{margin-top:5px!important}.notificationCard{overflow:hidden}.notificationCard .notificationSource{font-size:10px!important}.notificationText{font-size:12px!important}.notificationAction{min-height:40px!important}
+      .uxObjectStatusLine{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:2px 0 12px}.uxStatusChip{display:inline-flex;align-items:center;gap:5px;min-height:25px;padding:4px 8px;border-radius:999px;background:#f2f4f7;color:#475467;font-size:10px;font-weight:850}.uxStatusChip.good{background:#ecfdf3;color:#067647}.uxStatusChip.warning{background:#fffaeb;color:#b54708}.uxStatusChip.danger{background:#fef3f2;color:#b42318}.uxStatusChip.info{background:#eff8ff;color:#175cd3}
+      .premiumObjectCard .objectCardFacts .row:nth-child(3),.premiumObjectCard .objectCardFacts .row:nth-child(4){display:none}.premiumObjectCard .objectCardFacts{gap:7px!important}.premiumObjectCard .objectCardFacts .row{padding:7px 0!important}.premiumObjectCard .objectCardActions{border-top:1px solid #eef1f4;padding-top:12px;margin-top:7px}.premiumObjectCard .primaryObjectAction{flex:1.25}.premiumObjectCard .secondaryObjectAction{flex:.8}
+      .uxObjectOverview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}.uxObjectOverviewItem{padding:10px 11px;border:1px solid #e7ebf0;border-radius:11px;background:#fbfcfd}.uxObjectOverviewItem span{display:block;color:#667085;font-size:10px;font-weight:750}.uxObjectOverviewItem strong{display:block;margin-top:2px;color:#172033;font-size:13px;line-height:1.3}.uxObjectNextAction{display:flex;align-items:flex-start;gap:11px;margin-top:12px;padding:12px 13px;border-radius:12px;border:1px solid #dbe7fb;background:#f7faff}.uxObjectNextAction.danger{border-color:#fecdca;background:#fff7f6}.uxObjectNextAction.warning{border-color:#fedf89;background:#fffcf5}.uxObjectNextAction.ok{border-color:#abefc6;background:#f6fef9}.uxObjectNextActionIcon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:9px;background:#fff;color:#175cd3}.uxObjectNextActionIcon svg,.uxSectionIcon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.uxObjectNextActionText strong{display:block;color:#172033;font-size:12px}.uxObjectNextActionText span{display:block;margin-top:2px;color:#667085;font-size:11px;line-height:1.45}
+      .detailSection h3{display:flex!important;align-items:center;gap:8px!important}.uxSectionIcon{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#f2f4f7;color:#475467}.detailSection .kv{min-height:38px!important}.detailSection .kv span{color:#667085!important;font-size:11px!important}.detailSection .kv strong{font-size:12px!important;line-height:1.35}.fullSpan .uxSectionToggle{margin-left:auto;border:0;background:transparent;color:#667085;font-size:11px;font-weight:800;cursor:pointer}.fullSpan.is-collapsed>*:not(h3){display:none!important}
+      .uxEmptyFriendly{display:grid;gap:3px;padding:22px;border:1px dashed #cbd5e1;border-radius:13px;background:#fbfcfd;text-align:center}.uxEmptyFriendly strong{color:#344054}.uxEmptyFriendly span{color:#667085;font-size:12px}
+      .uxToastStack{position:fixed;right:18px;bottom:18px;z-index:12050;display:grid;gap:8px;pointer-events:none}.uxToast{min-width:240px;max-width:min(390px,calc(100vw - 30px));padding:11px 13px;border:1px solid #abefc6;border-radius:11px;background:#ecfdf3;color:#05603a;box-shadow:0 12px 30px rgba(16,24,40,.18);font-size:12px;font-weight:750;animation:uxToastIn .18s ease-out}.uxToast.warning{border-color:#fedf89;background:#fffaeb;color:#93370d}@keyframes uxToastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      .modalCard,.taskModalCard,.inspectionModalCard,.maintenanceEditCard,.tenantReportModalCard{border-radius:18px!important;box-shadow:0 24px 70px rgba(15,23,42,.28)!important}.formGrid label,.modalCard label,.taskModalCard label,.inspectionModalCard label{font-size:11px!important;font-weight:750!important;color:#475467}.formGrid input,.formGrid select,.formGrid textarea,.modalCard input,.modalCard select,.modalCard textarea{min-height:43px;border-color:#d0d5dd!important;border-radius:10px!important;background:#fff!important}.formGrid input:focus,.formGrid select:focus,.formGrid textarea:focus,.modalCard input:focus,.modalCard select:focus,.modalCard textarea:focus{outline:0!important;border-color:#84adff!important;box-shadow:0 0 0 3px rgba(46,144,250,.13)!important}
+      .professionalMobileNav{border-radius:20px!important}.professionalMobileNavBtn{font-size:9.5px!important}.professionalMobileNavBtn.active{box-shadow:inset 0 0 0 1px #dbeafe}
+      @media(max-width:900px){.main>header{top:0;padding-top:8px!important}.uxContextBar{margin:0 0 12px;padding:12px;align-items:flex-start}.uxContextText{font-size:11px}.uxContextAction{min-height:38px;padding:8px 10px}.uxDashboardReadout{grid-template-columns:repeat(2,minmax(0,1fr))}.uxObjectOverview{grid-template-columns:repeat(2,minmax(0,1fr))}.premiumObjectCard .objectCardActions{display:grid!important;grid-template-columns:1fr 1fr}.premiumObjectCard .primaryObjectAction{grid-column:1/-1}.uxToastStack{right:8px;bottom:calc(82px + env(safe-area-inset-bottom,0px))}.detailGrid{gap:10px!important}}
+      @media(max-width:560px){#pageTitle{font-size:25px!important}.uxContextBar{display:grid}.uxContextAction{width:100%}.uxDashboardReadout{grid-template-columns:1fr 1fr}.simpleSmartActionCard{grid-template-columns:30px minmax(0,1fr)!important}.simpleSmartActionIcon{display:none!important}.uxObjectOverview{grid-template-columns:1fr 1fr}.detailHeroTop{gap:10px!important}.detailActions{width:100%;display:grid!important;grid-template-columns:1fr 1fr}.detailActions button{width:100%!important}.notificationActions{display:grid!important;grid-template-columns:1fr}.notificationActions button{width:100%!important}.uxObjectNextAction{padding:10px}.uxContextText{line-height:1.4}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const header=document.querySelector('.main>header');
+  if(header&&!el('uxContextBarV404215')){
+    const bar=document.createElement('section');
+    bar.id='uxContextBarV404215';
+    bar.className='uxContextBar';
+    bar.setAttribute('aria-live','polite');
+    header.insertAdjacentElement('afterend',bar);
+    bar.addEventListener('click',event=>{
+      const btn=event.target.closest('[data-ux-context-action]');
+      if(!btn) return;
+      const action=btn.dataset.uxContextAction;
+      if(action==='newProperty') openNewProperty();
+      else if(action==='newTask') openTaskModal();
+      else if(action==='newMaintenance') openMaintenanceModal('new');
+      else if(action==='newInspection') openInspectionModal();
+      else if(action==='meldingen') openNotificationCenter({scope:'all'});
+    });
+  }
+
+  if(!el('uxToastStackV404215')){
+    const stack=document.createElement('div');stack.id='uxToastStackV404215';stack.className='uxToastStack';document.body.appendChild(stack);
+  }
+
+  document.body.addEventListener('click',event=>{
+    const toggle=event.target.closest('.uxSectionToggle');
+    if(!toggle) return;
+    const section=toggle.closest('.fullSpan');
+    if(!section) return;
+    const collapsed=section.classList.toggle('is-collapsed');
+    toggle.textContent=collapsed?'Tonen':'Inklappen';
+    toggle.setAttribute('aria-expanded',String(!collapsed));
+  });
+
+  const active=document.querySelector('.page.active')?.id||'dashboard';
+  updateUxPageContextV404215(active);
+  parkExternalAiSearchV404215();
+}
+
+function updateUxPageContextV404215(pageId){
+  const bar=el('uxContextBarV404215');if(!bar)return;
+  const info=UX_PAGE_CONTEXT_V404215[pageId]||{eyebrow:'Dashboard',title:el('pageTitle')?.textContent||'Overzicht',text:'Bekijk en beheer de gegevens op deze pagina.',action:null,actionLabel:''};
+  bar.innerHTML=`<div class="uxContextMain"><span class="uxContextEyebrow">${escHtml(info.eyebrow)}</span><strong class="uxContextTitle">${escHtml(info.title)}</strong><span class="uxContextText">${escHtml(info.text)}</span></div>${info.action?`<button type="button" class="uxContextAction" data-ux-context-action="${escAttr(info.action)}">${escHtml(info.actionLabel)}</button>`:''}`;
+  const search=el('search');
+  if(search){
+    const placeholders={dashboard:'Zoek in alle objecten…',objecten:'Zoek object, adres, huurder of plaats…',contracten:'Zoek object of huurder…',onderhoud:'Zoek object of onderhoud…',meldingen:'Zoek in meldingen…',taken:'Zoek in taken…',detail:'Zoek in alle objecten…'};
+    search.placeholder=placeholders[pageId]||'Zoeken…';
+  }
+}
+
+function updateUxDashboardV404215(notes=[]){
+  const dashboard=el('dashboard');if(!dashboard)return;
+  if(!el('uxDashboardReadoutV404215')){
+    const readout=document.createElement('section');readout.id='uxDashboardReadoutV404215';readout.className='uxDashboardReadout';
+    const anchor=dashboard.querySelector('.simpleSmartPanel')||dashboard.firstElementChild;
+    if(anchor) anchor.insertAdjacentElement('beforebegin',readout); else dashboard.prepend(readout);
+  }
+  const urgent=notes.filter(n=>n.sev==='danger').length;
+  const tenant=rawTenantIssueReports.filter(tenantReportIsOpen).length;
+  const tasks=rawTasks.filter(t=>t.status!=='Afgerond').length;
+  const dueSoon=vastgoedData.filter(r=>{const d=r.contract_timeline?.noticeDays;return !r.contract_opgezegd&&!r.contract_onbepaalde&&d!==null&&d>=0&&d<=90;}).length;
+  el('uxDashboardReadoutV404215').innerHTML=`
+    <div class="uxReadoutCard ${urgent?'is-danger':'is-good'}"><span>Nu belangrijk</span><strong>${urgent}</strong><small>${urgent?'Urgente actiepunten':'Geen urgente acties'}</small></div>
+    <div class="uxReadoutCard ${tenant?'is-warning':'is-good'}"><span>Huurders</span><strong>${tenant}</strong><small>${tenant?'Openstaande meldingen':'Geen open meldingen'}</small></div>
+    <div class="uxReadoutCard ${dueSoon?'is-warning':'is-good'}"><span>Contracten</span><strong>${dueSoon}</strong><small>${dueSoon?'Opzegmoment ≤ 90 dagen':'Geen korte deadline'}</small></div>
+    <div class="uxReadoutCard"><span>Taken</span><strong>${tasks}</strong><small>${tasks?'Nog uit te voeren':'Alles afgerond'}</small></div>`;
+
+  const attention=el('attentionList')?.closest('.panel');
+  if(attention) attention.classList.add('uxLegacyAttentionPanel');
+  const smart=dashboard.querySelector('.simpleSmartPanel');
+  if(smart){
+    const eyebrow=smart.querySelector('.simpleSmartEyebrow');if(eyebrow)eyebrow.textContent='Automatisch geprioriteerd';
+    const h2=smart.querySelector('h2');if(h2)h2.textContent='Dit moet je als eerste doen';
+    const p=smart.querySelector('.simpleSmartPanelHeader p');if(p)p.textContent='Werk deze stappen van boven naar beneden af. Als de onderliggende taak of actie is afgerond, verdwijnt de melding automatisch.';
+  }
+}
+
+function enhanceObjectCardsUxV404215(notes=[]){
+  const counts=new Map();
+  notes.forEach(item=>{if(item.objectId)counts.set(item.objectId,(counts.get(item.objectId)||0)+1);});
+  document.querySelectorAll('.premiumObjectCard[data-object-card-id]').forEach(card=>{
+    const id=card.dataset.objectCardId;const r=vastgoedData.find(x=>String(x.id)===String(id));if(!r)return;
+    let line=card.querySelector('.uxObjectStatusLine');if(!line){line=document.createElement('div');line.className='uxObjectStatusLine';card.querySelector('.objectCardHeader')?.insertAdjacentElement('afterend',line);}
+    const vacant=isVacant(r);const count=counts.get(r.id)||0;
+    line.innerHTML=`<span class="uxStatusChip ${vacant?'danger':'good'}">${vacant?'Leegstaand':'Verhuurd'}</span><span class="uxStatusChip ${r.contract_opgezegd?'warning':'info'}">${escHtml(r.contract_opgezegd?'Contract opgezegd':r.contract_onbepaalde?'Onbepaalde tijd':'Contract actief')}</span>${count?`<span class="uxStatusChip ${count>2?'warning':'info'}">${count} actie${count===1?'':'s'}</span>`:'<span class="uxStatusChip good">Geen acties</span>'}`;
+  });
+}
+
+function uxSectionIconNameV404215(title){
+  const t=norm(title);if(t.includes('financ'))return'euro';if(t.includes('huurder'))return'user';if(t.includes('contract'))return'contract';if(t.includes('document'))return'folder';if(t.includes('onderhoud'))return'history';if(t.includes('taak'))return'task';return'building';
+}
+
+function enhanceDetailUxV404215(r){
+  const content=el('detailContent');if(!content)return;
+  const hero=content.querySelector('.detailHero');
+  if(hero&&!hero.querySelector('.uxObjectOverview')){
+    const overview=document.createElement('div');overview.className='uxObjectOverview';
+    overview.innerHTML=`<div class="uxObjectOverviewItem"><span>Huurder</span><strong>${escHtml(r.huurder||'-')}</strong></div><div class="uxObjectOverviewItem"><span>Maandhuur</span><strong>${euro(r.huur_pm)}</strong></div><div class="uxObjectOverviewItem"><span>Contract</span><strong>${escHtml(r.contract_opgezegd?'Opgezegd':r.contract_onbepaalde?'Onbepaalde tijd':'Actief')}</strong></div><div class="uxObjectOverviewItem"><span>Objectstatus</span><strong>${escHtml(r.status||'-')}</strong></div>`;
+    hero.appendChild(overview);
+  }
+  if(hero&&!hero.querySelector('.uxObjectNextAction')){
+    const item=notificationItems(vastgoedData).find(n=>String(n.objectId||'')===String(r.id));
+    const next=document.createElement('div');next.className=`uxObjectNextAction ${item?item.sev:'ok'}`;
+    next.innerHTML=item
+      ? `<span class="uxObjectNextActionIcon">${uxIconV404215('bell')}</span><div class="uxObjectNextActionText"><strong>Volgende stap: ${escHtml(item.title)}</strong><span>${escHtml(item.text)}</span></div>`
+      : `<span class="uxObjectNextActionIcon">${uxIconV404215('check')}</span><div class="uxObjectNextActionText"><strong>Geen actie nodig</strong><span>Voor dit object zijn op dit moment geen openstaande dashboardmeldingen.</span></div>`;
+    hero.appendChild(next);
+  }
+  content.querySelectorAll('.detailSection h3').forEach(h3=>{
+    if(!h3.querySelector('.uxSectionIcon')){const icon=document.createElement('span');icon.className='uxSectionIcon';icon.innerHTML=uxIconV404215(uxSectionIconNameV404215(h3.textContent));h3.prepend(icon);}
+    const section=h3.closest('.fullSpan');
+    if(section&&!h3.querySelector('.uxSectionToggle')){const btn=document.createElement('button');btn.type='button';btn.className='uxSectionToggle';btn.textContent='Inklappen';btn.setAttribute('aria-expanded','true');h3.appendChild(btn);}
+  });
+}
+
+function showUxToastV404215(message,tone='success'){
+  const stack=el('uxToastStackV404215');if(!stack)return;
+  const toast=document.createElement('div');toast.className=`uxToast ${tone==='warning'?'warning':''}`;toast.textContent=message;stack.appendChild(toast);
+  window.setTimeout(()=>{toast.style.opacity='0';toast.style.transform='translateY(4px)';window.setTimeout(()=>toast.remove(),180);},2600);
+}
+
+function parkExternalAiSearchV404215(){
+  const dash=el('smartAskDashboard');
+  if(dash){
+    const title=dash.querySelector('h2,h3,strong');if(title&&/vraag|slim|ai/i.test(title.textContent))title.textContent='Snel vinden';
+    const desc=dash.querySelector('p');if(desc)desc.textContent='Stel een vraag in gewone taal. Deze zoekfunctie gebruikt alleen de gegevens die al in jouw ingelogde dashboard staan.';
+  }
+}
+
+// De externe AI-redeneerlaag is bewust geparkeerd. Slim zoeken blijft lokaal werken.
+renderSmartQuestionResults=async function(question){
+  const box=el('smartAskResults');if(!box)return;const text=clean(question);
+  if(!text){box.innerHTML='<div class="smartAskEmpty">Typ hierboven een vraag.</div>';return;}
+  const {intent,rows}=smartSearchQuestion(text);const shown=rows.slice(0,100);const rangeText=intent.range?` · ${intent.range.label}`:'';
+  box.innerHTML=`<div class="smartAskInterpretation"><strong>Zoeken binnen het dashboard</strong> · er wordt geen externe AI-dienst gebruikt.</div><div class="smartAskSummary"><div><strong>${rows.length} ${rows.length===1?'resultaat':'resultaten'}</strong><span>Vraag: “${escHtml(text)}”${escHtml(rangeText)}</span></div>${rows.length>100?'<span>De eerste 100 resultaten worden getoond.</span>':''}</div>${shown.length?shown.map(smartSearchResultHtml).join(''):`<div class="uxEmptyFriendly"><strong>Niets gevonden</strong><span>Probeer een andere formulering, datum of categorie.</span></div>`}`;
+};
+
+// Niet-database UX-feedback rond bestaande veilige acties.
+const saveTaskV404215=saveTask;
+saveTask=async function(event){await saveTaskV404215(event);if(el('taskModal')?.classList.contains('hidden'))showUxToastV404215('Taak opgeslagen.');};
+const saveMaintenanceEditV404215=saveMaintenanceEdit;
+saveMaintenanceEdit=async function(event){await saveMaintenanceEditV404215(event);if(el('maintenanceEditModal')?.classList.contains('hidden'))showUxToastV404215('Onderhoud opgeslagen. Meldingen zijn bijgewerkt.');};
+const saveInspectionV404215=saveInspection;
+saveInspection=async function(event){await saveInspectionV404215(event);if(el('inspectionModal')?.classList.contains('hidden'))showUxToastV404215('Keuring opgeslagen. De nieuwe status wordt automatisch bewaakt.');};
+const completeTenantReportV404215=completeTenantReport;
+completeTenantReport=async function(reportId){const before=rawTenantIssueReports.find(r=>r.id===reportId)?.status;await completeTenantReportV404215(reportId);const after=rawTenantIssueReports.find(r=>r.id===reportId)?.status;if(before!==after&&after==='Afgerond')showUxToastV404215('Huurdersmelding afgerond en uit de openstaande meldingen verwijderd.');};
+const applyRentIncreaseV404215=applyRentIncrease;
+applyRentIncrease=async function(){const before=activeRentContext?.r?.id;await applyRentIncreaseV404215();if(before&&!activeRentContext)showUxToastV404215('Huurverhoging verwerkt. De melding is automatisch bijgewerkt.');};
+
 function init(){
   if(!window.supabase){ el('loginError').textContent='Supabase library niet geladen. Ververs de pagina.'; return; }
   if(!rememberLoginEnabled()) clearPersistedSupabaseSession();
@@ -7853,6 +8064,7 @@ function init(){
   ensurePremiumDashboardUi();
   ensureProfessionalUx();
   ensureSimpleSmartDashboardUi();
+  ensureUxCleanupV404215();
   document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
     selectedPropertyId=null;
     setPage(btn.dataset.page,btn.dataset.title||btn.textContent.trim());
