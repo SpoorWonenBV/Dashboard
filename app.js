@@ -7717,6 +7717,7 @@ function ensureSimpleSmartDashboardUi(){
 
 function updateSimpleSmartDashboard(notes=[]){
   ensureSimpleSmartDashboardUi();
+  ensureSmartQuestionSearchUi();
   const target=el('simpleSmartActionList');
   if(!target) return;
   const sorted=[...notes].sort((a,b)=>simpleSmartRank(a)-simpleSmartRank(b));
@@ -7726,6 +7727,118 @@ function updateSimpleSmartDashboard(notes=[]){
     return;
   }
   target.innerHTML=top.map(simpleSmartActionCard).join('');
+}
+
+
+
+/* v40.42.12: slimme vraagzoeker — lokaal, zonder externe AI-dienst */
+const SMART_MONTHS={januari:1,februari:2,maart:3,april:4,mei:5,juni:6,juli:7,augustus:8,september:9,oktober:10,november:11,december:12,jan:1,feb:2,mrt:3,apr:4,jun:6,jul:7,aug:8,sep:9,okt:10,nov:11,dec:12};
+function smartIso(year,month,day=1){return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;}
+function smartLastDay(year,month){return new Date(year,month,0).getDate();}
+function smartAddDays(value,days){const p=isoParts(value);if(!p)return null;const d=new Date(p.year,p.month-1,p.day);d.setDate(d.getDate()+days);return smartIso(d.getFullYear(),d.getMonth()+1,d.getDate());}
+function smartAddMonths(value,months){const p=isoParts(value);if(!p)return null;const d=new Date(p.year,p.month-1,1);d.setMonth(d.getMonth()+months);return smartIso(d.getFullYear(),d.getMonth()+1,smartLastDay(d.getFullYear(),d.getMonth()+1));}
+function smartNormalizeQuestion(value){return norm(value).replace(/[?!.;,]+/g,' ').replace(/\s+/g,' ').trim();}
+function smartDateRange(question){
+  const q=smartNormalizeQuestion(question); const today=isoToday(); const tp=isoParts(today); let m;
+  if(/\bvandaag\b/.test(q)) return {from:today,to:today,label:`op ${dateFmt(today)}`};
+  if(/\bdit jaar\b/.test(q)) return {from:smartIso(tp.year,1,1),to:smartIso(tp.year,12,31),label:`in ${tp.year}`};
+  if(/\bvolgend jaar\b/.test(q)) return {from:smartIso(tp.year+1,1,1),to:smartIso(tp.year+1,12,31),label:`in ${tp.year+1}`};
+  if(/\bdeze maand\b/.test(q)) return {from:smartIso(tp.year,tp.month,1),to:smartIso(tp.year,tp.month,smartLastDay(tp.year,tp.month)),label:'deze maand'};
+  if(/\bvolgende maand\b/.test(q)){const d=new Date(tp.year,tp.month,1);return {from:smartIso(d.getFullYear(),d.getMonth()+1,1),to:smartIso(d.getFullYear(),d.getMonth()+1,smartLastDay(d.getFullYear(),d.getMonth()+1)),label:'volgende maand'};}
+  m=q.match(/\bbinnen\s+(\d+)\s+dagen\b/); if(m){const n=Number(m[1]);return {from:today,to:smartAddDays(today,n),label:`binnen ${n} dagen`};}
+  m=q.match(/\bbinnen\s+(\d+)\s+maand(?:en)?\b/); if(m){const n=Number(m[1]);return {from:today,to:smartAddMonths(today,n),label:`binnen ${n} maanden`};}
+  m=q.match(/\btussen\s+(\d{1,2})[-\/]([01]?\d)[-\/](\d{4})\s+en\s+(\d{1,2})[-\/]([01]?\d)[-\/](\d{4})/); if(m){return {from:smartIso(+m[3],+m[2],+m[1]),to:smartIso(+m[6],+m[5],+m[4]),label:`tussen ${m[1]}-${m[2]}-${m[3]} en ${m[4]}-${m[5]}-${m[6]}`};}
+  m=q.match(/\b(voor|vóór|tot)\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(20\d{2})\b/);
+  if(m){const month=SMART_MONTHS[m[2]],year=+m[3];return {from:null,to:smartAddDays(smartIso(year,month,1),-1),label:`vóór ${m[2]} ${year}`};}
+  m=q.match(/\b(?:tot en met|t\/m)\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(20\d{2})\b/);
+  if(m){const month=SMART_MONTHS[m[1]],year=+m[2];return {from:null,to:smartIso(year,month,smartLastDay(year,month)),label:`tot en met ${m[1]} ${year}`};}
+  m=q.match(/\bna\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(20\d{2})\b/);
+  if(m){const month=SMART_MONTHS[m[1]],year=+m[2];return {from:smartAddDays(smartIso(year,month,smartLastDay(year,month)),1),to:null,label:`na ${m[1]} ${year}`};}
+  m=q.match(/\b(?:in\s+)?(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(20\d{2})\b/);
+  if(m){const month=SMART_MONTHS[m[1]],year=+m[2];return {from:smartIso(year,month,1),to:smartIso(year,month,smartLastDay(year,month)),label:`in ${m[1]} ${year}`};}
+  m=q.match(/\b(20\d{2})\b/); if(m){const year=+m[1];return {from:smartIso(year,1,1),to:smartIso(year,12,31),label:`in ${year}`};}
+  return null;
+}
+function smartDateInRange(value,range){if(!range)return true;if(!value)return false;const d=String(value).slice(0,10);return (!range.from||d>=range.from)&&(!range.to||d<=range.to);}
+function smartQueryIntent(question){
+  const q=smartNormalizeQuestion(question);
+  let kind='all';
+  if(/scope\s*10/.test(q)) kind='scope10'; else if(/scope\s*12/.test(q)) kind='scope12'; else if(/scope|keuring|inspectie/.test(q)) kind='inspection';
+  else if(/onderhoud/.test(q)) kind='maintenance'; else if(/huurverhog/.test(q)) kind='rent'; else if(/energielabel/.test(q)) kind='energy';
+  else if(/contract|opzeg/.test(q)) kind='contract'; else if(/taak|taken/.test(q)) kind='task'; else if(/huurder.?melding|melding van huurder|huurdersmelding/.test(q)) kind='tenantReport';
+  else if(/leegstand|leegstaand|geen huurder/.test(q)) kind='vacancy'; else if(/object|pand|adres|huurder/.test(q)) kind='property';
+  let dateField='date'; if(kind==='contract') dateField=/opzeg|opzegbaar/.test(q)?'notice':'end';
+  const status=/afgerond|klaar|gereed/.test(q)?'done':/openstaand|\bopen\b|moet gebeuren|actie|gepland/.test(q)?'open':/verlopen|te laat/.test(q)?'overdue':/afgekeurd/.test(q)?'failed':null;
+  let inspectionNeedle='';
+  if(kind==='inspection'){
+    if(/\bscope\b/.test(q)) inspectionNeedle='scope';
+    else if(/nen\s*3140/.test(q)) inspectionNeedle='nen 3140';
+    else if(/brandveilig/.test(q)) inspectionNeedle='brandveilig';
+    else if(/lift/.test(q)) inspectionNeedle='lift';
+    else if(/legionella/.test(q)) inspectionNeedle='legionella';
+  }
+  let numeric=null; const cm=q.match(/\b(boven|meer dan|groter dan|onder|minder dan|kleiner dan)\s*€?\s*([\d.]+(?:,\d+)?)\b/);
+  if(cm){const amount=Number(cm[2].replace(/\./g,'').replace(',','.'));let field='';if(/maandhuur|huurprijs|\bhuur\b/.test(q))field='huur_pm';else if(/woz/.test(q))field='woz_waarde';else if(/servicekosten/.test(q))field='servicekosten';else if(/energiekosten/.test(q))field='energiekosten';else if(/aankoopwaarde/.test(q))field='aankoopwaarde';else if(/overwaarde/.test(q))field='overwaarde';else if(/hypotheek/.test(q))field='hypotheek';else if(/rendement/.test(q))field='bruto_rendement';if(field&&Number.isFinite(amount))numeric={field,op:/boven|meer dan|groter dan/.test(cm[1])?'>':'<',amount};}
+  return {q,kind,dateField,status,inspectionNeedle,numeric,range:smartDateRange(q)};
+}
+function smartSearchRecords(){
+  const rows=[];
+  vastgoedData.forEach(r=>{
+    rows.push({kind:'property',propertyId:r.id,title:r.object,subtitle:`${[r.straatnaam,r.huisnummer,r.postcode,r.stad].filter(Boolean).join(' ')}${r.huurder&&r.huurder!=='-'?` · Huurder: ${r.huurder}`:''}`,status:r.status,date:null,values:{huur_pm:Number(r.huur_pm||0),woz_waarde:Number(r.woz_waarde||0),servicekosten:Number(r.servicekosten||0),energiekosten:Number(r.energiekosten||0),aankoopwaarde:Number(r.aankoopwaarde||0),overwaarde:Number(r.overwaarde||0),hypotheek:Number(r.hypotheek||0),bruto_rendement:Number(r.bruto_rendement||0)},search:[r.object,r.straatnaam,r.huisnummer,r.postcode,r.stad,r.type,r.status,r.huurder,r.email,r.telefoon].join(' ')});
+    const vacant=String(r.status||'').toLowerCase().includes('leeg')||r.huurder==='-'; if(vacant) rows.push({kind:'vacancy',propertyId:r.id,title:r.object,subtitle:'Leegstaand / geen huurder gekoppeld',status:'Open',date:null,search:[r.object,r.stad,'leegstand'].join(' ')});
+    if(r.contract?.id){const t=r.contract_timeline||contractTimeline(r.contract);rows.push({kind:'contract',propertyId:r.id,title:r.object,subtitle:`${r.huurder||'-'} · ${t.terminated?'Opgezegd':t.indefinite?'Onbepaalde tijd':'Actief'}`,status:t.terminated?'Opgezegd':'Actief',date:t.effectiveEnd,noticeDate:t.effectiveNotice,endDate:t.effectiveEnd,search:[r.object,r.huurder,r.stad,'contract',t.terminated?'opgezegd':'actief'].join(' ')});}
+    if(r.energielabel_verplicht&&r.energielabel_geldig_tot) rows.push({kind:'energy',propertyId:r.id,title:`Energielabel ${r.object}`,subtitle:`Label ${r.energielabel||'-'}`,status:r.status_energy?.[0]||'',date:r.energielabel_geldig_tot,search:[r.object,r.stad,'energielabel',r.energielabel].join(' ')});
+    const rentDate=rentIncreaseEffectiveDate(r); if(rentDate) rows.push({kind:'rent',propertyId:r.id,title:`Huurverhoging ${r.object}`,subtitle:`${r.huurder||'-'} · ${euro(r.huur_pm)} p/m`,status:'Te plannen',date:rentDate,search:[r.object,r.huurder,r.stad,'huurverhoging',r.maand_huurverhoging].join(' ')});
+  });
+  maintenanceSourceRows(vastgoedData).forEach(m=>rows.push({kind:'maintenance',propertyId:m.objectId||m.property_id||null,title:m.type||m.title||'Onderhoud',subtitle:m.object||'Onbekend object',status:maintenanceStatusLabel(m.status),date:m.planned_date||null,search:[m.object,m.type,m.title,m.status,m.description,'onderhoud'].join(' ')}));
+  rawInspections.forEach(i=>{const p=inspectionProperty(i);rows.push({kind:'inspection',inspectionType:clean(i.inspection_type),propertyId:i.property_id,title:`${i.inspection_type} · ${p?.object||'Onbekend object'}`,subtitle:[p?.straatnaam,p?.huisnummer,p?.stad].filter(Boolean).join(' '),status:inspectionDisplayStatus(i),date:inspectionDeadline(i),search:[i.inspection_type,p?.object,p?.straatnaam,p?.huisnummer,p?.stad,i.status,'keuring inspectie scope'].join(' ')});});
+  rawTasks.forEach(t=>{const p=taskProperty(t);rows.push({kind:'task',propertyId:t.property_id||null,title:t.title||'Taak',subtitle:p?.object||'Geen object',status:t.status,date:t.due_date||null,search:[t.title,taskVisibleDescription(t.description),t.status,t.priority,p?.object,p?.stad,'taak'].join(' ')});});
+  rawTenantIssueReports.forEach(r=>{const p=tenantReportProperty(r);rows.push({kind:'tenantReport',propertyId:p?.id||r.property_id||null,title:`${r.category||'Huurdersmelding'} · ${p?.object||'Onbekend object'}`,subtitle:`${r.urgency||'Normaal'} · ${r.status||'Nieuw'}`,status:r.status,date:String(r.submitted_at||'').slice(0,10)||null,search:[r.category,r.description,r.urgency,r.status,p?.object,p?.stad,'huurdersmelding'].join(' ')});});
+  return rows;
+}
+function smartSearchQuestion(question){
+  const intent=smartQueryIntent(question); const ignored=new Set(['welke','welk','wat','waar','zijn','voor','lopen','loopt','af','van','het','een','de','die','tot','met','binnen','geef','toon','laat','overzicht','scope','keuring','keuringen','inspectie','inspecties','onderhoud','contract','contracten','huurverhoging','huurverhogingen','energielabel','energielabels','taak','taken','huurder','huurders','melding','meldingen','openstaand','open','afgerond','gepland','zit','staat','staan','worden','kan','kunnen','december','november','oktober','september','augustus','juli','juni','mei','april','maart','februari','januari']); const words=intent.q.split(' ').filter(w=>(w.length>2||/^\d+$/.test(w))&&!ignored.has(w)&&!/^20\d{2}$/.test(w));
+  let rows=smartSearchRecords().filter(r=>{
+    if(intent.kind==='scope10') return r.kind==='inspection'&&norm(r.inspectionType).replace(/\s/g,'')==='scope10';
+    if(intent.kind==='scope12') return r.kind==='inspection'&&norm(r.inspectionType).replace(/\s/g,'')==='scope12';
+    if(intent.kind!=='all'&&r.kind!==intent.kind) return false;
+    return true;
+  });
+  if(intent.inspectionNeedle) rows=rows.filter(r=>norm(r.inspectionType).includes(intent.inspectionNeedle));
+  if(intent.range) rows=rows.filter(r=>{const d=intent.kind==='contract'?(intent.dateField==='notice'?r.noticeDate:r.endDate):r.date;return smartDateInRange(d,intent.range);});
+  if(intent.numeric){rows=rows.filter(r=>r.kind==='property'&&r.values&&Number.isFinite(r.values[intent.numeric.field])&&(intent.numeric.op==='>'?r.values[intent.numeric.field]>intent.numeric.amount:r.values[intent.numeric.field]<intent.numeric.amount));}
+  if(intent.status==='done') rows=rows.filter(r=>/afgerond|geldig|klaar/i.test(r.status||''));
+  if(intent.status==='open') rows=rows.filter(r=>!/afgerond|niet van toepassing/i.test(r.status||''));
+  if(intent.status==='overdue') rows=rows.filter(r=>r.date&&String(r.date).slice(0,10)<isoToday()||/verlopen|te laat/i.test(r.status||''));
+  if(intent.status==='failed') rows=rows.filter(r=>/afgekeurd/i.test(r.status||''));
+  // Bij een brede vraag gebruiken we overige woorden als zachte relevantiescore; gestructureerde intenties blijven leidend.
+  rows=rows.map(r=>{const hay=norm(r.search);const score=words.reduce((n,w)=>n+(hay.includes(w)?1:0),0);return {...r,_score:score};});
+  if(words.length) rows=rows.filter(r=>r._score>0);
+  rows.sort((a,b)=>(b._score-a._score)||String(a.date||'9999-12-31').localeCompare(String(b.date||'9999-12-31'))||String(a.title).localeCompare(String(b.title),'nl',{numeric:true}));
+  return {intent,rows};
+}
+function smartSearchTypeLabel(row){return ({inspection:'Keuring',maintenance:'Onderhoud',contract:'Contract',rent:'Huurverhoging',energy:'Energielabel',task:'Taak',tenantReport:'Huurdersmelding',vacancy:'Leegstand',property:'Object'})[row.kind]||'Resultaat';}
+function smartSearchResultHtml(row){return `<article class="smartAskResult"><div class="smartAskResultMain"><div class="smartAskResultMeta"><span class="smartAskType">${escHtml(smartSearchTypeLabel(row))}</span>${row.status?`<span class="smartAskStatus">${escHtml(row.status)}</span>`:''}</div><strong>${escHtml(row.title)}</strong><span>${escHtml(row.subtitle||'')}</span></div><div class="smartAskResultSide">${row.date?`<time>${escHtml(dateFmt(row.date))}</time>`:''}${row.propertyId?`<button type="button" class="smartAskOpenObject" data-id="${escAttr(row.propertyId)}">Open object</button>`:''}</div></article>`;}
+function renderSmartQuestionResults(question){
+  const box=el('smartAskResults'); if(!box)return; const text=clean(question); if(!text){box.innerHTML='<div class="smartAskEmpty">Typ hierboven een vraag.</div>';return;}
+  const {intent,rows}=smartSearchQuestion(text); const shown=rows.slice(0,100); const rangeText=intent.range?` · ${intent.range.label}`:'';
+  box.innerHTML=`<div class="smartAskSummary"><div><strong>${rows.length} ${rows.length===1?'resultaat':'resultaten'}</strong><span>Vraag: “${escHtml(text)}”${escHtml(rangeText)}</span></div>${rows.length>100?'<span>De eerste 100 resultaten worden getoond.</span>':''}</div>${shown.length?shown.map(smartSearchResultHtml).join(''):`<div class="smartAskEmpty"><strong>Niets gevonden</strong><span>Probeer bijvoorbeeld “openstaande huurdersmeldingen”, “contracten opzegbaar voor januari 2027” of “onderhoud binnen 60 dagen”.</span></div>`}`;
+}
+function openSmartQuestionSearch(prefill=''){
+  ensureSmartQuestionSearchUi(); const modal=el('smartAskModal'); const input=el('smartAskInput'); if(!modal||!input)return; modal.classList.remove('hidden'); input.value=prefill||input.value||''; renderSmartQuestionResults(input.value); setTimeout(()=>input.focus(),40);
+}
+function closeSmartQuestionSearch(){el('smartAskModal')?.classList.add('hidden');}
+function ensureSmartQuestionSearchUi(){
+  if(!el('smartAskStyles')){const st=document.createElement('style');st.id='smartAskStyles';st.textContent=`
+    .smartAskLaunch{display:flex;align-items:center;gap:9px;min-height:42px;padding:0 14px;border:1px solid #d0d5dd!important;border-radius:11px!important;background:#fff!important;color:#344054!important;font-weight:800!important;box-shadow:0 1px 2px rgba(16,24,40,.04)!important}.smartAskLaunch:hover{border-color:#98a2b3!important;background:#f9fafb!important}.smartAskLaunch svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .smartAskDashboard{margin:0 0 18px;padding:18px;border:1px solid #dbe4f0;border-radius:16px;background:linear-gradient(135deg,#f8fbff,#fff);box-shadow:0 8px 24px rgba(16,24,40,.05)}.smartAskDashboard h2{margin:0 0 5px;font-size:18px;color:#101828}.smartAskDashboard p{margin:0 0 12px;color:#667085;font-size:13px}.smartAskDashboardRow{display:flex;gap:9px}.smartAskDashboardRow input{flex:1;min-width:0;height:46px;border-radius:11px!important}.smartAskDashboardRow button{min-width:112px}.smartAskExamples{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.smartAskExample{padding:6px 9px!important;border:1px solid #e4e7ec!important;border-radius:999px!important;background:#fff!important;color:#475467!important;font-size:11px!important;font-weight:750!important}
+    .smartAskModal{position:fixed;inset:0;z-index:1600;display:flex;align-items:flex-start;justify-content:center;padding:7vh 18px 24px;background:rgba(15,23,42,.48);backdrop-filter:blur(5px)}.smartAskModal.hidden{display:none}.smartAskDialog{width:min(920px,100%);max-height:86vh;display:flex;flex-direction:column;border:1px solid #e4e7ec;border-radius:18px;background:#fff;box-shadow:0 30px 80px rgba(15,23,42,.25);overflow:hidden}.smartAskHeader{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:20px 22px 14px;border-bottom:1px solid #eaecf0}.smartAskHeader h2{margin:0 0 4px;color:#101828;font-size:21px}.smartAskHeader p{margin:0;color:#667085;font-size:13px}.smartAskClose{width:38px;height:38px;border-radius:50%!important;border:1px solid #d0d5dd!important;background:#fff!important;color:#344054!important;display:grid!important;place-items:center!important}.smartAskClose svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}.smartAskForm{display:flex;gap:9px;padding:14px 22px;border-bottom:1px solid #eaecf0;background:#fcfcfd}.smartAskForm input{flex:1;height:48px;font-size:15px}.smartAskForm button{min-width:100px}.smartAskResults{overflow:auto;padding:14px 22px 22px}.smartAskSummary{display:flex;justify-content:space-between;gap:12px;align-items:end;padding:0 2px 12px}.smartAskSummary div{display:grid;gap:3px}.smartAskSummary strong{font-size:15px;color:#101828}.smartAskSummary span{font-size:11px;color:#667085}.smartAskResult{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:13px 14px;border:1px solid #eaecf0;border-radius:12px;background:#fff;margin-bottom:8px}.smartAskResult:hover{border-color:#cfd8e6;background:#fcfdff}.smartAskResultMain{display:grid;gap:4px;min-width:0}.smartAskResultMain strong{color:#101828;font-size:14px}.smartAskResultMain>span{color:#667085;font-size:12px}.smartAskResultMeta{display:flex;gap:6px;align-items:center}.smartAskType,.smartAskStatus{display:inline-flex;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.smartAskType{background:#eff8ff;color:#175cd3}.smartAskStatus{background:#f2f4f7;color:#475467}.smartAskResultSide{display:flex;align-items:center;gap:10px}.smartAskResultSide time{font-size:12px;font-weight:800;color:#344054;white-space:nowrap}.smartAskOpenObject{padding:8px 10px!important;background:#fff!important;color:#175cd3!important;border:1px solid #b2ccff!important;border-radius:9px!important;font-size:11px!important;font-weight:850!important}.smartAskEmpty{display:grid;gap:5px;place-items:center;text-align:center;padding:42px 16px;color:#667085}.smartAskEmpty strong{color:#344054}
+    @media(max-width:700px){.smartAskDashboardRow,.smartAskForm{display:grid;grid-template-columns:1fr}.smartAskDashboardRow button,.smartAskForm button{width:100%}.smartAskModal{padding:12px}.smartAskDialog{max-height:94vh}.smartAskHeader{padding:16px}.smartAskForm,.smartAskResults{padding:12px 16px 16px}.smartAskResult{grid-template-columns:1fr}.smartAskResultSide{justify-content:space-between}.smartAskLaunch span{display:none}.smartAskLaunch{width:42px;padding:0;justify-content:center}}
+  `;document.head.appendChild(st);}
+  if(!el('smartAskModal')){const wrap=document.createElement('div');wrap.id='smartAskModal';wrap.className='smartAskModal hidden';wrap.innerHTML=`<section class="smartAskDialog" role="dialog" aria-modal="true" aria-labelledby="smartAskTitle"><header class="smartAskHeader"><div><h2 id="smartAskTitle">Slim zoeken</h2><p>Stel een vraag in gewone taal. De zoekopdracht blijft binnen het dashboard en gebruikt alleen de geladen vastgoeddata.</p></div><button type="button" class="smartAskClose" aria-label="Sluiten"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></header><form class="smartAskForm" id="smartAskForm"><input id="smartAskInput" autocomplete="off" placeholder="Bijv. Welke Scope-keuringen lopen af voor december 2026?"><button type="submit">Zoeken</button></form><div id="smartAskResults" class="smartAskResults"></div></section>`;document.body.appendChild(wrap);}
+  const headerActions=document.querySelector('.headerActions'); if(headerActions&&!el('smartAskLaunch')){const b=document.createElement('button');b.id='smartAskLaunch';b.type='button';b.className='smartAskLaunch';b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path><path d="M11 8v6M8 11h6"></path></svg><span>Slim zoeken</span>`;headerActions.prepend(b);}
+  const dashboard=el('dashboard'); if(dashboard&&!el('smartAskDashboard')){const s=document.createElement('section');s.id='smartAskDashboard';s.className='smartAskDashboard';s.innerHTML=`<h2>Vraag het dashboard</h2><p>Je hoeft geen filters te kennen. Vraag gewoon wat je wilt weten.</p><div class="smartAskDashboardRow"><input id="smartAskDashboardInput" placeholder="Welke Scope-keuringen lopen af voor december 2026?"><button type="button" id="smartAskDashboardBtn">Zoeken</button></div><div class="smartAskExamples"><button type="button" class="smartAskExample" data-question="Welke contracten kunnen voor januari 2027 worden opgezegd?">Opzegbare contracten</button><button type="button" class="smartAskExample" data-question="Welke onderhoudstaken zijn binnen 60 dagen gepland?">Onderhoud komende 60 dagen</button><button type="button" class="smartAskExample" data-question="Welke huurdersmeldingen staan open?">Open huurdersmeldingen</button></div>`;const smart=el('simpleSmartPanel');if(smart)smart.insertAdjacentElement('beforebegin',s);else dashboard.prepend(s);}
+  if(!window.__smartAskBound){window.__smartAskBound=true;document.body.addEventListener('click',e=>{if(e.target.closest('#smartAskLaunch')){openSmartQuestionSearch();return;}if(e.target.closest('.smartAskClose')||e.target===el('smartAskModal')){closeSmartQuestionSearch();return;}const example=e.target.closest('.smartAskExample');if(example){const q=example.dataset.question||'';if(el('smartAskDashboardInput'))el('smartAskDashboardInput').value=q;openSmartQuestionSearch(q);return;}if(e.target.closest('#smartAskDashboardBtn')){openSmartQuestionSearch(el('smartAskDashboardInput')?.value||'');return;}const open=e.target.closest('.smartAskOpenObject');if(open){closeSmartQuestionSearch();renderDetail(open.dataset.id);}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSmartQuestionSearch();}if(e.key==='Escape'&&!el('smartAskModal')?.classList.contains('hidden'))closeSmartQuestionSearch();});el('smartAskForm')?.addEventListener('submit',e=>{e.preventDefault();renderSmartQuestionResults(el('smartAskInput')?.value||'');});el('smartAskDashboardInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();openSmartQuestionSearch(e.currentTarget.value);}});}
 }
 
 function init(){
