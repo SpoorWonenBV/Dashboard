@@ -6862,12 +6862,11 @@ function render(){
   renderContractOverview(contractPageData);
   renderFinancialPage(data);
   renderAgenda(data);
-  el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Oorspr. einddatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+contractPageData.map(r=>{
-    const originalEnd=r.contract_onbepaalde?'Onbepaalde tijd':dateFmt(r.oorspronkelijke_einddatum_contract);
+  el('contractTable').innerHTML=`<tr><th>Object</th><th>Huurder</th><th>Contractstatus</th><th>Startdatum</th><th>Huidige einddatum</th><th>Opzegtermijn</th><th>Uiterste opzegdatum</th><th>Verlenging</th><th>Status opzegmoment</th><th></th></tr>`+contractPageData.map(r=>{
     const renewalCount=r.aantal_verlengingen?`<span class="subtle">${r.aantal_verlengingen}× toegepast</span>`:'';
     const mismatch=r.opzegdatum_afwijking?`<span class="contractWarning">Wijkt af van berekende datum</span>`:'';
     const hasContract=Boolean(r.contract?.id);
-    return `<tr><td><strong>${r.object}</strong><span class="subtle">${r.straatnaam} ${r.huisnummer}</span></td><td>${r.huurder}</td><td>${statusBadge(hasContract?[r.contract_status,r.contract_opgezegd?'warning':'ok']:['Geen contract','danger'])}</td><td>${hasContract?dateFmt(r.startdatum_contract):'-'}</td><td>${hasContract?originalEnd:'-'}</td><td>${hasContract?contractEndDisplay(r):'-'}${hasContract?renewalCount:''}</td><td>${hasContract?contractPeriodText(r):'-'}</td><td>${hasContract?(r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))+mismatch:'-'}</td><td>${hasContract?renewalText(r):'-'}</td><td>${statusBadge(hasContract?r.status_opzeg:['Geen contract','danger'])}</td><td><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td></tr>`;
+    return `<tr><td><strong>${r.object}</strong><span class="subtle">${r.straatnaam} ${r.huisnummer}</span></td><td>${r.huurder}</td><td>${statusBadge(hasContract?[r.contract_status,r.contract_opgezegd?'warning':'ok']:['Geen contract','danger'])}</td><td>${hasContract?dateFmt(r.startdatum_contract):'-'}</td><td>${hasContract?contractEndDisplay(r):'-'}${hasContract?renewalCount:''}</td><td>${hasContract?contractPeriodText(r):'-'}</td><td>${hasContract?(r.contract_onbepaalde?'Niet van toepassing':dateFmt(r.opzegdatum))+mismatch:'-'}</td><td>${hasContract?renewalText(r):'-'}</td><td>${statusBadge(hasContract?r.status_opzeg:['Geen contract','danger'])}</td><td><button class="miniLink detailBtn" data-id="${r.id}">Open object</button></td></tr>`;
   }).join('');
   setupContractStickyHeader();
   if(el('maintenanceOverview')) renderMaintenanceOverview(data);
@@ -7238,17 +7237,16 @@ function ensurePremiumDashboardUi(){
     #contractTable .badge{max-width:100%;white-space:normal!important;padding:4px 6px!important;font-size:9.5px!important;line-height:1.2;text-align:center;justify-content:center}
     #contractTable .contractWarning{display:block;margin-top:4px;font-size:9px!important;line-height:1.25}
     #contractTable .miniLink{min-height:32px!important;padding:5px 6px!important;font-size:10px!important;white-space:normal!important;line-height:1.15}
-    #contractTable th:nth-child(1),#contractTable td:nth-child(1){width:12%}
-    #contractTable th:nth-child(2),#contractTable td:nth-child(2){width:10%}
-    #contractTable th:nth-child(3),#contractTable td:nth-child(3){width:9%}
-    #contractTable th:nth-child(4),#contractTable td:nth-child(4){width:7%}
-    #contractTable th:nth-child(5),#contractTable td:nth-child(5){width:8%}
+    #contractTable th:nth-child(1),#contractTable td:nth-child(1){width:13%}
+    #contractTable th:nth-child(2),#contractTable td:nth-child(2){width:11%}
+    #contractTable th:nth-child(3),#contractTable td:nth-child(3){width:10%}
+    #contractTable th:nth-child(4),#contractTable td:nth-child(4){width:8%}
+    #contractTable th:nth-child(5),#contractTable td:nth-child(5){width:10%}
     #contractTable th:nth-child(6),#contractTable td:nth-child(6){width:9%}
-    #contractTable th:nth-child(7),#contractTable td:nth-child(7){width:8%}
+    #contractTable th:nth-child(7),#contractTable td:nth-child(7){width:11%}
     #contractTable th:nth-child(8),#contractTable td:nth-child(8){width:10%}
-    #contractTable th:nth-child(9),#contractTable td:nth-child(9){width:9%}
-    #contractTable th:nth-child(10),#contractTable td:nth-child(10){width:11%}
-    #contractTable th:nth-child(11),#contractTable td:nth-child(11){width:7%;text-align:right}
+    #contractTable th:nth-child(9),#contractTable td:nth-child(9){width:11%}
+    #contractTable th:nth-child(10),#contractTable td:nth-child(10){width:7%;text-align:right}
     table{font-variant-numeric:tabular-nums}
     th{padding:13px 14px!important;background:#f8fafc;color:#526174!important;font-size:11px!important;font-weight:800!important;letter-spacing:.045em;text-transform:uppercase;border-bottom:1px solid var(--ui-border)!important;white-space:nowrap}
     td{padding:14px!important;border-bottom:1px solid #edf1f5!important;vertical-align:middle}
@@ -7545,15 +7543,14 @@ function ensureProfessionalUx(){
         #contractTable tr:not(:first-child) td:nth-child(2)::before{content:'Huurder'}
         #contractTable tr:not(:first-child) td:nth-child(3)::before{content:'Contractstatus'}
         #contractTable tr:not(:first-child) td:nth-child(4)::before{content:'Startdatum'}
-        #contractTable tr:not(:first-child) td:nth-child(5)::before{content:'Oorspr. einddatum'}
-        #contractTable tr:not(:first-child) td:nth-child(6)::before{content:'Huidige einddatum'}
-        #contractTable tr:not(:first-child) td:nth-child(7)::before{content:'Opzegtermijn'}
-        #contractTable tr:not(:first-child) td:nth-child(8)::before{content:'Uiterste opzegdatum'}
-        #contractTable tr:not(:first-child) td:nth-child(9)::before{content:'Verlenging'}
-        #contractTable tr:not(:first-child) td:nth-child(10)::before{content:'Status opzegmoment'}
-        #contractTable tr:not(:first-child) td:nth-child(11){grid-column:1/-1;padding:10px 12px!important;background:#fbfcfd!important}
-        #contractTable tr:not(:first-child) td:nth-child(11)::before{display:none}
-        #contractTable tr:not(:first-child) td:nth-child(11) .miniLink{width:100%;min-height:40px!important;font-size:11px!important}
+        #contractTable tr:not(:first-child) td:nth-child(5)::before{content:'Huidige einddatum'}
+        #contractTable tr:not(:first-child) td:nth-child(6)::before{content:'Opzegtermijn'}
+        #contractTable tr:not(:first-child) td:nth-child(7)::before{content:'Uiterste opzegdatum'}
+        #contractTable tr:not(:first-child) td:nth-child(8)::before{content:'Verlenging'}
+        #contractTable tr:not(:first-child) td:nth-child(9)::before{content:'Status opzegmoment'}
+        #contractTable tr:not(:first-child) td:nth-child(10){grid-column:1/-1;padding:10px 12px!important;background:#fbfcfd!important}
+        #contractTable tr:not(:first-child) td:nth-child(10)::before{display:none}
+        #contractTable tr:not(:first-child) td:nth-child(10) .miniLink{width:100%;min-height:40px!important;font-size:11px!important}
         #contractTable td:first-child strong{font-size:12px!important}
         #contractTable .subtle{font-size:10px!important}
         #contractTable .badge{font-size:10px!important}
