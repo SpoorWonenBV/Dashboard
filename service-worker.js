@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v40-42-20-letterhead';
+const CACHE_NAME='vastgoed-dashboard-static-v40-42-21-pdfletter';
 const OFFLINE_URL='/offline.html';
 const STATIC_PATHS=new Set([
   '/style.css',

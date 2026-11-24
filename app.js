@@ -345,7 +345,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=40.42.4-letterhead',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=40.42.5-pdfletter',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -2363,15 +2363,25 @@ async function applyBranding(next={}){
 
 
 async function normalizeLetterhead(file){
-  if(!file || !['image/png','image/jpeg'].includes(file.type) || file.size>2*1024*1024) throw new Error('Kies een PNG of JPG van maximaal 2 MB.');
-  const bitmap=await createImageBitmap(file);
-  try{
-    if(!bitmap.width || !bitmap.height || bitmap.width*bitmap.height>20000000) throw new Error('Afbeelding is te groot.');
-    const scale=Math.min(1,1800/bitmap.width,600/bitmap.height);
-    const canvas=document.createElement('canvas'); canvas.width=Math.max(1,Math.round(bitmap.width*scale)); canvas.height=Math.max(1,Math.round(bitmap.height*scale));
-    const ctx=canvas.getContext('2d'); ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Afbeelding verwerken mislukt.')),'image/jpeg',0.9));
-  }finally{bitmap.close();}
+  if(!file || file.size>10*1024*1024) throw new Error('Kies een A4-PDF van maximaal 10 MB.');
+  if(file.type==='application/pdf' || /\.pdf$/i.test(file.name||'')){
+    const pdfjs=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+    const task=pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false,enableXfa:false});
+    try{
+      const doc=await task.promise;
+      if(doc.numPages!==1) throw new Error('Gebruik precies één pagina briefpapier.');
+      const page=await doc.getPage(1), base=page.getViewport({scale:1});
+      if(Math.abs(base.width-595.28)>5 || Math.abs(base.height-841.89)>5) throw new Error('Gebruik A4 staand.');
+      const viewport=page.getViewport({scale:2480/base.width});
+      const canvas=document.createElement('canvas');canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);
+      await page.render({canvasContext:canvas.getContext('2d'),viewport,background:'#fff'}).promise;
+      const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('PDF verwerken mislukt.')),'image/jpeg',0.88));
+      if(blob.size>2*1024*1024) throw new Error('Briefpapier is na verwerking te groot; vereenvoudig de PDF.');
+      return blob;
+    }finally{await task.destroy();}
+  }
+  throw new Error('Upload een PDF. Exporteer Word eerst als PDF.');
 }
 function updateLetterheadStatus(){
   el('letterheadStatus').textContent=branding.letterhead_path?'Briefpapier ingesteld':'Geen briefpapier ingesteld';
@@ -2387,7 +2397,7 @@ async function changeLetterhead(remove=false){
     const old=branding.letterhead_path;
     if(!remove){
       const blob=await normalizeLetterhead(el('letterheadFile').files[0]);
-      uploaded='letterheads/'+crypto.randomUUID()+'.jpg';
+      uploaded='letterheads/'+crypto.randomUUID()+'-a4.jpg';
       const {error}=await sb.storage.from('branding').upload(uploaded,blob,{contentType:'image/jpeg',cacheControl:'0',upsert:false});
       if(error) throw error;
     }
@@ -2408,9 +2418,13 @@ async function letterheadMarkup(){
   const {data,error}=await sb.storage.from('branding').download(path);
   if(error) throw new Error('Briefpapier ophalen mislukt: '+error.message);
   if(data.size>2*1024*1024) throw new Error('Briefpapier is te groot.');
-  const blob=await normalizeLetterhead(new File([data],'briefpapier.jpg',{type:'image/jpeg'}));
-  const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
-  return `<img alt="Briefpapier" src="${url}" style="display:block;width:100%;height:28mm;object-fit:contain;object-position:left center;margin:0 0 5mm;break-inside:avoid">`;
+  const bitmap=await createImageBitmap(data);
+  let full=false;
+  try{full=path.endsWith('-a4.jpg') && Math.abs(bitmap.width/bitmap.height-210/297)<0.01;
+    if(path.endsWith('-a4.jpg')&&!full) throw new Error('Ongeldig A4-briefpapier.');
+  }finally{bitmap.close();}
+  const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(data);});
+  return {full,html:`<img alt="Briefpapier" src="${url}" class="letterheadImage" style="${full?'':'display:block;width:100%;height:28mm;object-fit:contain;object-position:left center;margin:0 0 5mm'}">`};
 }
 async function openBrandedLetter(html){
   const popup=window.open('about:blank','_blank');
@@ -2418,7 +2432,13 @@ async function openBrandedLetter(html){
   popup.opener=null;
   try{
     const markup=await letterheadMarkup();
-    if(markup) html=html.replace("img-src 'none'","img-src data:").replace('<main class="sheet">','<main class="sheet">'+markup).replace('</style>','@media print{.sheet{padding-top:15mm} h1{margin-top:8mm}} </style>');
+    if(markup){
+      html=html.replace("img-src 'none'","img-src data:");
+      if(markup.full){
+        html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html).replace('</style>',`
+.sheet{position:relative;isolation:isolate;padding:45mm 20mm 35mm!important;background:white;min-height:297mm} .letterheadImage{position:absolute;top:0;left:0;width:210mm;height:297mm;z-index:-1;pointer-events:none} h1{margin-top:8mm} tr{break-inside:avoid} @page{size:A4 portrait;margin:45mm 20mm 35mm} @media print{html,body{width:auto!important;min-height:0!important} .sheet{position:static;isolation:auto;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important} .letterheadImage{position:fixed;top:-45mm;left:-20mm;width:210mm;height:297mm;z-index:-1} } </style>`);
+      }else html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html);
+    }
     const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
     popup.location.replace(url);setTimeout(()=>URL.revokeObjectURL(url),60000);
   }catch(error){popup.close();throw error;}
