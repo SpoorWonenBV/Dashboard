@@ -2436,8 +2436,12 @@ async function openBrandedLetter(html){
       html=html.replace("img-src 'none'","img-src data:");
       if(markup.full){
         html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html).replace('</style>',`
-.sheet{position:relative;isolation:isolate;padding:45mm 20mm 35mm!important;background:white;min-height:297mm} .letterheadImage{position:absolute;top:0;left:0;width:210mm;height:297mm;z-index:-1;pointer-events:none} h1{margin-top:8mm} tr{break-inside:avoid} @page{size:A4 portrait;margin:45mm 20mm 35mm} @media print{html,body{width:auto!important;min-height:0!important} .sheet{position:static;isolation:auto;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important} .letterheadImage{position:fixed;top:-45mm;left:-20mm;width:210mm;height:297mm;z-index:-1} } </style>`);
+.sheet{position:relative;isolation:isolate;padding:45mm 20mm 35mm!important;background:white;min-height:297mm} .letterheadImage{position:absolute;top:0;left:0;width:210mm;height:297mm;z-index:0;pointer-events:none;display:block} .sheet > :not(.letterheadImage){position:relative;z-index:1} h1{margin-top:8mm} tr{break-inside:avoid} @page{size:A4 portrait;margin:45mm 20mm 35mm} @media print{html,body{width:auto!important;min-height:0!important} .sheet{position:static;isolation:auto;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important} .letterheadImage{position:fixed;top:-45mm;left:-20mm;width:210mm;height:297mm;z-index:0;display:block;print-color-adjust:exact;-webkit-print-color-adjust:exact} .sheet > :not(.letterheadImage){position:relative;z-index:1} } </style>`);
       }else html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html);
+    }
+    if(markup){
+      html=html.replace('onclick="window.print()"','disabled onclick="window.print()"');
+      html=html.replace('</body>',`<script>(function(){const img=document.querySelector('.letterheadImage');const button=document.querySelector('.toolbar button');function ready(){if(img.naturalWidth>0){button.disabled=false;}else{button.textContent='Briefpapier laden mislukt';}}if(img.complete)ready();else{img.addEventListener('load',ready,{once:true});img.addEventListener('error',ready,{once:true});}})();<\/script></body>`);
     }
     const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
     popup.location.replace(url);setTimeout(()=>URL.revokeObjectURL(url),60000);
