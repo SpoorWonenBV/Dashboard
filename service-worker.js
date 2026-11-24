@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME='vastgoed-dashboard-static-v40-42-19';
+const CACHE_NAME='vastgoed-dashboard-static-v40-42-20-letterhead';
 const OFFLINE_URL='/offline.html';
 const STATIC_PATHS=new Set([
   '/style.css',
@@ -67,7 +67,7 @@ self.addEventListener('fetch',event=>{
     return;
   }
 
-  if(!STATIC_PATHS.has(url.pathname)) return;
+  if(url.search || !STATIC_PATHS.has(url.pathname)) return;
 
   event.respondWith((async()=>{
     const cached=await caches.match(url.pathname);

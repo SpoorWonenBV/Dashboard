@@ -345,7 +345,7 @@ async function initPwa(){
     return;
   }
   try{
-    const serviceWorkerUrl=new URL('/service-worker.js?v=40.42.3',window.location.origin).href;
+    const serviceWorkerUrl=new URL('/service-worker.js?v=40.42.4-letterhead',window.location.origin).href;
     pwaRegistration=await navigator.serviceWorker.register(serviceWorkerUrl,{scope:'/',updateViaCache:'none'});
     await pwaRegistration.update();
 
@@ -1015,24 +1015,11 @@ function createRentLetterHtml(data){
     </main>
   </body></html>`;
 }
-function openRentConceptLetter(){
+async function openRentConceptLetter(){
   try{
     const data=proposalLetterData();
     const html=createRentLetterHtml(data);
-    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-    const blobUrl=URL.createObjectURL(blob);
-
-    // Open eerst een leeg venster vanuit de gebruikersactie en verbreek daarna
-    // direct de koppeling met het dashboard. De brief wordt vervolgens als
-    // lokaal Blob-document geladen en maakt geen externe netwerkverbindingen.
-    const popup=window.open('about:blank','_blank');
-    if(!popup){
-      URL.revokeObjectURL(blobUrl);
-      throw new Error('De browser blokkeert het nieuwe venster. Sta pop-ups toe voor dit dashboard.');
-    }
-    popup.opener=null;
-    popup.location.replace(blobUrl);
-    window.setTimeout(()=>URL.revokeObjectURL(blobUrl),60_000);
+    await openBrandedLetter(html);
   }catch(error){
     el('rentIncreaseMessage').textContent='Conceptbrief kan niet worden gemaakt: '+error.message;
   }
@@ -1740,18 +1727,12 @@ function createServiceCostLetterHtml(data,context){
   </main></body></html>`;
 }
 
-function openServiceCostLetter(){
+async function openServiceCostLetter(){
   try{
     if(!activeServiceCostContext) throw new Error('Geen afrekening geselecteerd.');
     const data=serviceCostPayload();
     const html=createServiceCostLetterHtml(data,activeServiceCostContext);
-    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-    const blobUrl=URL.createObjectURL(blob);
-    const popup=window.open('about:blank','_blank');
-    if(!popup){URL.revokeObjectURL(blobUrl);throw new Error('De browser blokkeert het nieuwe venster. Sta pop-ups toe voor dit dashboard.');}
-    popup.opener=null;
-    popup.location.replace(blobUrl);
-    window.setTimeout(()=>URL.revokeObjectURL(blobUrl),60_000);
+    await openBrandedLetter(html);
   }catch(error){
     el('serviceCostModalMessage').textContent='Conceptafrekening kan niet worden gemaakt: '+error.message;
   }
@@ -2380,6 +2361,69 @@ async function applyBranding(next={}){
   fillBrandingForm();
 }
 
+
+async function normalizeLetterhead(file){
+  if(!file || !['image/png','image/jpeg'].includes(file.type) || file.size>2*1024*1024) throw new Error('Kies een PNG of JPG van maximaal 2 MB.');
+  const bitmap=await createImageBitmap(file);
+  try{
+    if(!bitmap.width || !bitmap.height || bitmap.width*bitmap.height>20000000) throw new Error('Afbeelding is te groot.');
+    const scale=Math.min(1,1800/bitmap.width,600/bitmap.height);
+    const canvas=document.createElement('canvas'); canvas.width=Math.max(1,Math.round(bitmap.width*scale)); canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    const ctx=canvas.getContext('2d'); ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Afbeelding verwerken mislukt.')),'image/jpeg',0.9));
+  }finally{bitmap.close();}
+}
+function updateLetterheadStatus(){
+  el('letterheadStatus').textContent=branding.letterhead_path?'Briefpapier ingesteld':'Geen briefpapier ingesteld';
+  el('removeLetterheadBtn').disabled=!branding.letterhead_path;
+}
+async function changeLetterhead(remove=false){
+  const msg=el('letterheadMessage'), form=el('letterheadForm');
+  if(remove&&!confirm('Briefpapier verwijderen?')) return;
+  if(form.dataset.busy) return;
+  form.dataset.busy='1'; form.querySelectorAll('button').forEach(b=>b.disabled=true);
+  let uploaded=null, committed=false;
+  try{
+    const old=branding.letterhead_path;
+    if(!remove){
+      const blob=await normalizeLetterhead(el('letterheadFile').files[0]);
+      uploaded='letterheads/'+crypto.randomUUID()+'.jpg';
+      const {error}=await sb.storage.from('branding').upload(uploaded,blob,{contentType:'image/jpeg',cacheControl:'0',upsert:false});
+      if(error) throw error;
+    }
+    const {data,error}=await sb.from('app_settings').update({letterhead_path:uploaded}).eq('id',1).select('letterhead_path').single();
+    if(error) throw error;
+    committed=true; branding.letterhead_path=data.letterhead_path;
+    if(old && /^letterheads\/[a-f0-9-]+\.jpg$/.test(old)) await removeOldBrandingFile(old,uploaded);
+    form.reset(); msg.textContent=remove?'Briefpapier verwijderd.':'Briefpapier opgeslagen.';
+  }catch(error){
+    if(uploaded&&!committed) await sb.storage.from('branding').remove([uploaded]);
+    msg.textContent='Wijziging mislukt: '+error.message;
+  }finally{delete form.dataset.busy;form.querySelectorAll('button').forEach(b=>b.disabled=false);updateLetterheadStatus();}
+}
+async function letterheadMarkup(){
+  const path=branding.letterhead_path;
+  if(!path) return '';
+  if(!/^letterheads\/[a-f0-9-]+\.jpg$/.test(path)) throw new Error('Ongeldig briefpapierpad.');
+  const {data,error}=await sb.storage.from('branding').download(path);
+  if(error) throw new Error('Briefpapier ophalen mislukt: '+error.message);
+  if(data.size>2*1024*1024) throw new Error('Briefpapier is te groot.');
+  const blob=await normalizeLetterhead(new File([data],'briefpapier.jpg',{type:'image/jpeg'}));
+  const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+  return `<img alt="Briefpapier" src="${url}" style="display:block;width:100%;height:28mm;object-fit:contain;object-position:left center;margin:0 0 5mm;break-inside:avoid">`;
+}
+async function openBrandedLetter(html){
+  const popup=window.open('about:blank','_blank');
+  if(!popup) throw new Error('Sta pop-ups toe voor dit dashboard.');
+  popup.opener=null;
+  try{
+    const markup=await letterheadMarkup();
+    if(markup) html=html.replace("img-src 'none'","img-src data:").replace('<main class="sheet">','<main class="sheet">'+markup).replace('</style>','@media print{.sheet{padding-top:15mm} h1{margin-top:8mm}} </style>');
+    const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
+    popup.location.replace(url);setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(error){popup.close();throw error;}
+}
+
 function fillBrandingForm(){
   if(!el('brandingCompanyName')) return;
   el('brandingCompanyName').value=branding.company_name||'';
@@ -2390,6 +2434,7 @@ function fillBrandingForm(){
   el('brandingBrowserTitle').value=branding.browser_title||'';
   el('brandingPrimaryColor').value=validHex(branding.primary_color,DEFAULT_BRANDING.primary_color);
   el('brandingAccentColor').value=validHex(branding.accent_color,DEFAULT_BRANDING.accent_color);
+  updateLetterheadStatus();
   el('currentLogoText').textContent=branding.logo_url?'Logo ingesteld':'Nog geen logo ingesteld';
   el('currentFaviconText').textContent=branding.favicon_url?'Favicon ingesteld':'Nog geen favicon ingesteld';
 }
@@ -8535,6 +8580,8 @@ function init(){
   el('propertyMonthlyRent')?.addEventListener('input',syncYearlyRentFromMonthly);
   el('downloadObjectBackupBtn')?.addEventListener('click',downloadObjectBackup);
   el('backToObjectsBtn').addEventListener('click',()=>{ selectedPropertyId=null; setPage('objecten','Objecten'); });
+  el('letterheadForm').addEventListener('submit',e=>{e.preventDefault();changeLetterhead();});
+  el('removeLetterheadBtn').addEventListener('click',()=>changeLetterhead(true));
   el('brandingForm').addEventListener('submit',saveBranding);
   el('resetBrandingBtn').addEventListener('click',resetBranding);
   ['brandingCompanyName','brandingDashboardName','brandingPrimaryColor','brandingAccentColor'].forEach(id=>el(id).addEventListener('input',previewBrandingForm));

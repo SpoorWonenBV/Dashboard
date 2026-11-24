@@ -397,6 +397,14 @@
             </div>
           </form>
           <p id="brandingMessage" class="formMessage"></p>
+          <hr>
+          <h3>Briefpapier voor PDF-brieven</h3>
+          <p>Upload de bovenkant van je briefpapier (logo en bedrijfsgegevens) als PNG of JPG, maximaal 2 MB. Dit wordt boven beide financiële brieven geplaatst.</p>
+          <form id="letterheadForm">
+            <label>Briefpapier<input id="letterheadFile" type="file" accept="image/png,image/jpeg" required></label>
+            <p id="letterheadStatus" class="formHint"></p>
+            <div class="formActions"><button type="button" id="removeLetterheadBtn" class="secondaryBtn">Briefpapier verwijderen</button><button type="submit">Briefpapier opslaan</button></div>
+          </form><p id="letterheadMessage" class="formMessage" role="status"></p>
         </div>
 
         <div class="panel settingsPanel notificationSettingsPanel">
@@ -922,6 +930,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="qr-code.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=letterhead-1"></script>
 </body>
 </html>
