@@ -2435,8 +2435,19 @@ async function openBrandedLetter(html){
     if(markup){
       html=html.replace("img-src 'none'","img-src data:");
       if(markup.full){
-        html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html).replace('</style>',`
-.sheet{position:relative;isolation:isolate;padding:45mm 20mm 35mm!important;background:white;min-height:297mm} .letterheadImage{position:absolute;top:0;left:0;width:210mm;height:297mm;z-index:0;pointer-events:none;display:block} .sheet > :not(.letterheadImage){position:relative;z-index:1} h1{margin-top:8mm} tr{break-inside:avoid} @page{size:A4 portrait;margin:45mm 20mm 35mm} @media print{html,body{width:auto!important;min-height:0!important} .sheet{position:static;isolation:auto;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important} .letterheadImage{position:fixed;top:-45mm;left:-20mm;width:210mm;height:297mm;z-index:0;display:block;print-color-adjust:exact;-webkit-print-color-adjust:exact} .sheet > :not(.letterheadImage){position:relative;z-index:1} } </style>`);
+        // Keep the image inside the printable page, not in the clipped page margins.
+        html=html.replace('<main class="sheet">',markup.html+'<table class="letterPages"><thead><tr><td></td></tr></thead><tbody><tr><td><main class="sheet">').replace('</main>','</main></td></tr></tbody><tfoot><tr><td></td></tr></tfoot></table>').replace('</style>',`
+.letterPages{width:210mm;margin:12px auto 28px;border-collapse:collapse;position:relative;z-index:1;background:transparent;table-layout:fixed}
+.letterPages>thead>tr>td,.letterPages>tfoot>tr>td,.letterPages>tbody>tr>td{padding:0;border:0;text-align:left;vertical-align:top}
+.letterPages>thead>tr>td{height:45mm}.letterPages>tfoot>tr>td{height:35mm}
+.letterheadImage{position:absolute;top:0;left:50%;transform:translateX(-50%);width:210mm;height:297mm;display:block;pointer-events:none;z-index:0}
+.sheet{width:100%!important;min-height:217mm!important;margin:0!important;padding:0 20mm!important;background:transparent!important;box-shadow:none!important} h1{margin-top:8mm} .sheet tr{break-inside:avoid}
+body{position:relative}.letterheadImage{top:0}.toolbar{position:relative;z-index:2}
+@media screen{.letterheadImage{top:calc(18px + 48px + 12px)} .letterPages{margin-top:12px}}
+@page{size:A4 portrait;margin:0}
+@media print{html,body{width:210mm!important;min-height:0!important;margin:0!important;padding:0!important;background:white!important;position:static!important}.toolbar{display:none!important}.letterheadImage{position:fixed!important;top:0!important;left:0!important;transform:none!important;width:210mm!important;height:297mm!important;z-index:0!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}.letterPages{margin:0!important;width:210mm!important;position:relative;z-index:1}.letterPages>thead{display:table-header-group}.letterPages>tfoot{display:table-footer-group}.sheet{min-height:0!important}.letterPages>tbody>tr{break-inside:auto}}
+</style>`);
+        html=html.replace('</body>',`<script>function alignLetterhead(){const table=document.querySelector('.letterPages');const img=document.querySelector('.letterheadImage');img.style.top=table.offsetTop+'px';}alignLetterhead();window.addEventListener('resize',alignLetterhead);<\/script></body>`);
       }else html=html.replace('<main class="sheet">','<main class="sheet">'+markup.html);
     }
     if(markup){
